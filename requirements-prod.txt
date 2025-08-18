@@ -1,0 +1,18 @@
+# Production dependencies (Linux/WSL/Docker)
+# Core
+aiohttp==3.10.5  # optional if we later use async HTTP; harmless to have ready
+selenium==4.15.2
+requests==2.31.0
+python-telegram-bot==20.7
+
+# Parsing / data
+beautifulsoup4==4.12.2
+lxml==5.2.2
+pandas>=2.2.0
+
+# Config
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Logging
+structlog==23.2.0
