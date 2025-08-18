@@ -1,0 +1,47 @@
+# Opción B: Enrutar Selenium a través de un contenedor VPN (Gluetun)
+# Expone puertos 4444 (Selenium) y 7900 (noVNC) desde el contenedor VPN.
+# Debes crear un archivo .env.vpn con tus credenciales del proveedor.
+
+services:
+  gluetun:
+    image: ghcr.io/qdm12/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+    env_file:
+      - .env.vpn
+    # Expone los puertos del navegador a través del túnel VPN
+    ports:
+      - "4444:4444"  # Selenium Grid Standalone
+      - "7900:7900"  # noVNC para ver la GUI
+    # Monta carpeta para claves/certificados OpenVPN y estado de Gluetun
+    volumes:
+      - ./gluetun:/gluetun
+    # Puedes agregar healthcheck si lo deseas
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "https://1.1.1.1/cdn-cgi/trace"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+
+  selenium-firefox:
+    image: selenium/standalone-firefox:4.23.0
+    container_name: selenium-firefox
+    shm_size: 2g
+    # MUY IMPORTANTE: compartir red con gluetun para salir por el túnel
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      - SE_VNC_NO_PASSWORD=1
+      # Ajustes opcionales
+      # - SE_NODE_MAX_SESSIONS=1
+      # - SE_SESSION_REQUEST_TIMEOUT=300
+      # - SE_OPENTELEMETRY_TRACING=false
+
+# Uso:
+#   1) Copia .env.vpn.example a .env.vpn y configura tu proveedor VPN
+#   2) docker compose -f docker-compose.vpn.yml --env-file .env.vpn up -d
+#   3) WEBDRIVER_URL = http://localhost:4444/wd/hub
+#   4) Ver GUI: http://localhost:7900 (password: secret)

@@ -44,6 +44,12 @@ class BotConfig:
     log_file: str = "logs/bot.log"
     headless_mode: bool = False
     browser_timeout: int = 30
+    # Optional proxy configuration for the browser (HTTP or SOCKS5)
+    proxy_type: Optional[str] = None  # "http" | "socks5"
+    proxy_host: Optional[str] = None
+    proxy_port: Optional[int] = None
+    proxy_username: Optional[str] = None
+    proxy_password: Optional[str] = None
 
 class ConfigManager:
     """Manages all bot configuration"""
@@ -91,7 +97,12 @@ class ConfigManager:
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             log_file=os.getenv("LOG_FILE", "logs/bot.log"),
             headless_mode=os.getenv("HEADLESS_MODE", "false").lower() == "true",
-            browser_timeout=int(os.getenv("BROWSER_TIMEOUT", "30"))
+            browser_timeout=int(os.getenv("BROWSER_TIMEOUT", "30")),
+            proxy_type=os.getenv("BROWSER_PROXY_TYPE"),
+            proxy_host=os.getenv("BROWSER_PROXY_HOST"),
+            proxy_port=int(os.getenv("BROWSER_PROXY_PORT", "0")) or None,
+            proxy_username=os.getenv("BROWSER_PROXY_USERNAME"),
+            proxy_password=os.getenv("BROWSER_PROXY_PASSWORD"),
         )
     
     def _load_channel_mapping(self) -> Dict:

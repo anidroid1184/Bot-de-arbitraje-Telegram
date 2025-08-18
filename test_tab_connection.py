@@ -4,13 +4,25 @@ Tests connection to Firefox and lists all open tabs.
 """
 import sys
 import os
+import time
 
-# Add src to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# Ensure we can import as package 'src' when running directly
+try:
+    _this_file = __file__  # may fail in some invocation contexts
+    CURRENT_DIR = os.path.dirname(os.path.abspath(_this_file))
+except Exception as e:
+    # Fall back to current working directory
+    print(e)
+    CURRENT_DIR = os.getcwd()
+    
+PROJECT_ROOT = os.path.abspath(CURRENT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from src.config.settings import ConfigManager, BotConfig
 from src.browser.tab_manager import TabManager
 from src.utils.logger import setup_logger
+from selenium.webdriver.support.ui import WebDriverWait
 
 def test_tab_connection():
     """Test connecting to existing Firefox tabs and listing them"""
@@ -32,9 +44,9 @@ def test_tab_connection():
             logger.info("Make sure Firefox is running with: firefox --remote-debugging-port=9222")
             return False
         
-        # Optional: seed relevant tabs for a fresh Selenium session (e.g., Docker container)
-        # This avoids manual steps and makes the test deterministic in CI/containers
-        if os.environ.get("SEED_TEST_TABS", "false").lower() in ("1", "true", "yes"): 
+        # Seed relevant tabs by default (Betburger and Surebet) for remote sessions (e.g., Docker Selenium)
+        # Controlled via SEED_TEST_TABS env var; default: true
+        if os.environ.get("SEED_TEST_TABS", "true").lower() in ("1", "true", "yes"): 
             try:
                 urls_to_open = [
                     os.environ.get("TEST_BETBURGER_URL", "https://betburger.com"),
@@ -47,7 +59,23 @@ def test_tab_connection():
                     else:
                         # Open subsequent URLs in new tabs
                         tab_manager.driver.execute_script(f"window.open('{url}', '_blank');")
+                        # Switch to the newest tab
+                        tab_manager.driver.switch_to.window(tab_manager.driver.window_handles[-1])
+
+                    # Wait for the page to load
+                    try:
+                        WebDriverWait(tab_manager.driver, 30).until(
+                            lambda d: d.execute_script("return document.readyState") == "complete"
+                        )
+                    except Exception:
+                        logger.warning("Timeout waiting for seeded tab to load; continuing anyway", url=url)
                 logger.info("Seeded test tabs for Betburger and Surebet")
+
+                # Optional wait to allow manual debugging before discovery
+                wait_seconds = int(os.environ.get("SEED_WAIT_SECONDS", "300"))
+                if wait_seconds > 0:
+                    logger.info(f"Waiting {wait_seconds}s before discovering tabs (manual debug window)")
+                    time.sleep(wait_seconds)
             except Exception as se:
                 logger.warning("Could not seed test tabs automatically", error=str(se))
         

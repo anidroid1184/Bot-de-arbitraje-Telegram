@@ -1,23 +1,22 @@
-# Core dependencies
+# Production dependencies (umbrella)
+
+# Core
+aiohttp==3.10.5
 selenium==4.15.2
 requests==2.31.0
 python-telegram-bot==20.7
 
-# Data processing
+# Parsing / data
 beautifulsoup4==4.12.2
+lxml==5.2.2
 pandas>=2.2.0
-html5lib==1.1
+html5lib==1.1  # opcional
 
-# Configuration and environment
+# Config
 python-dotenv==1.0.0
 pyyaml==6.0.1
 
-# Logging and monitoring
+# Logging
 structlog==23.2.0
 
-# Note: Removed packages requiring native build on Windows (lxml, aiohttp).
-# If needed later, install Microsoft C++ Build Tools or use wheels compatible with Py3.13.
-
-# Development and testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
+# Nota: paquetes de desarrollo/pruebas están en requirements-dev.txt

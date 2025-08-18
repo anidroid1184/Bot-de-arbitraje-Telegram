@@ -1,0 +1,73 @@
+version: "3.9"
+
+# Opción A (Cliente en España): Selenium sin VPN
+# Expone puertos 4444 (Selenium) y 7900 (noVNC)
+
+services:
+  selenium-firefox:
+    image: selenium/standalone-firefox:4.23.0
+    container_name: selenium-firefox
+    restart: unless-stopped
+    shm_size: 2g
+    tty: true
+    stdin_open: true
+    ports:
+      - "4444:4444"  # Selenium Grid Standalone
+      - "7900:7900"  # noVNC para ver la GUI
+    environment:
+      # noVNC: por defecto la imagen usa contraseña "secret". Si prefieres SIN contraseña, descomenta la línea siguiente.
+      # - SE_VNC_NO_PASSWORD=1
+      # Configuración opcional de Selenium
+      - SE_NODE_MAX_SESSIONS=1
+      - SE_SESSION_REQUEST_TIMEOUT=300
+      - SE_OPENTELEMETRY_TRACING=false
+      # Zona horaria (ajusta si corresponde)
+      - TZ=America/Bogota
+    volumes:
+      # Persistencia de perfil de Firefox y descargas del usuario "seluser"
+      - selenium_profile:/home/seluser
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # Servicio "bot" de ejecución única: abre Betburger y Surebet, espera (300s por defecto) y termina.
+  bot-once:
+    image: python:3.11-slim
+    container_name: bot-once
+    restart: "no"
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      # Usa la red interna para hablar con Selenium
+      WEBDRIVER_REMOTE_URL: http://selenium-firefox:4444/wd/hub
+      # Por defecto sembrar pestañas y esperar 300s (puedes ajustar en .env)
+      SEED_TEST_TABS: "true"
+      SEED_WAIT_SECONDS: "300"
+      TEST_BETBURGER_URL: https://betburger.com
+      TEST_SUREBET_URL: https://es.surebet.com
+    volumes:
+      - ./:/app
+    depends_on:
+      selenium-firefox:
+        condition: service_healthy
+    command: >
+      bash -lc "pip install --no-cache-dir -r requirements.txt && python test_tab_connection.py"
+
+# Uso:
+#   1) Ver logs en la terminal y no cerrarla automáticamente (modo adjunto):
+#      docker compose -f docker-compose.selenium.yml up --remove-orphans
+#      - Verás logs de selenium-firefox y de bot-once; el bot terminará solo tras la ejecución.
+#   2) En segundo plano (detached):
+#      docker compose -f docker-compose.selenium.yml up -d --remove-orphans
+#      - Para ver logs: docker logs -f selenium-firefox  |  docker logs -f bot-once
+#   WEBDRIVER_REMOTE_URL externo = http://localhost:4444/wd/hub
+#   GUI (noVNC): http://localhost:7900
+#     - Si NO defines SE_VNC_NO_PASSWORD, la contraseña es: secret
+#     - Si defines SE_VNC_NO_PASSWORD=1, el acceso no requiere contraseña
+
+volumes:
+  selenium_profile:
+    driver: local

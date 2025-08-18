@@ -37,7 +37,35 @@ class TabManager:
             options = Options()
             if self.config.headless_mode:
                 options.add_argument("--headless")
-            
+
+            # Apply optional proxy configuration via Firefox preferences
+            # We use prefs instead of Selenium Proxy object for better compatibility with Remote sessions.
+            if getattr(self.config, "proxy_type", None) and getattr(self.config, "proxy_host", None) and getattr(self.config, "proxy_port", None):
+                ptype = (self.config.proxy_type or "").lower()
+                host = self.config.proxy_host
+                port = int(self.config.proxy_port)
+                # 1 = Manual proxy config
+                options.set_preference("network.proxy.type", 1)
+                if ptype == "http":
+                    options.set_preference("network.proxy.http", host)
+                    options.set_preference("network.proxy.http_port", port)
+                    options.set_preference("network.proxy.ssl", host)
+                    options.set_preference("network.proxy.ssl_port", port)
+                    # Also set for DNS over proxy if desired
+                    options.set_preference("network.proxy.socks_remote_dns", True)
+                elif ptype in ("socks", "socks5"):
+                    options.set_preference("network.proxy.socks", host)
+                    options.set_preference("network.proxy.socks_port", port)
+                    options.set_preference("network.proxy.socks_version", 5)
+                    options.set_preference("network.proxy.socks_remote_dns", True)
+                    # Optional SOCKS auth
+                    if getattr(self.config, "proxy_username", None):
+                        options.set_preference("network.proxy.socks_username", self.config.proxy_username)
+                    if getattr(self.config, "proxy_password", None):
+                        options.set_preference("network.proxy.socks_password", self.config.proxy_password)
+                else:
+                    logger.warning("Unsupported proxy type provided; skipping proxy configuration", proxy_type=self.config.proxy_type)
+
             # If a remote WebDriver URL is provided, connect to it (e.g., Selenium Grid/Standalone in Docker)
             remote_url = os.environ.get("WEBDRIVER_REMOTE_URL")
             if remote_url:
