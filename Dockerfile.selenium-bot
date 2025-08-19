@@ -4,7 +4,7 @@ FROM selenium/standalone-firefox:4.23.0
 # Install Python 3 + pip
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-pip \
+    && apt-get install -y --no-install-recommends python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED=1 \
@@ -13,9 +13,20 @@ ENV PYTHONUNBUFFERED=1 \
 # Workdir for the app
 WORKDIR /app
 
-# Pre-install dependencies for faster start (optional; falls back to runtime install if missing)
+# Create a dedicated virtual environment for seluser to avoid PEP 668
+RUN python3 -m venv /home/seluser/.venv \
+    && /home/seluser/.venv/bin/python -m pip install --upgrade pip setuptools wheel
+
+# Pre-install Python deps into the venv
 COPY requirements.txt /app/requirements.txt
-RUN pip3 install --no-cache-dir -r /app/requirements.txt || true
+RUN /home/seluser/.venv/bin/pip install --no-cache-dir -r /app/requirements.txt
+
+# Ensure seluser owns the venv and app directory
+RUN chown -R 1200:1200 /home/seluser/.venv /app
+
+# Activate venv for all subsequent commands
+ENV VIRTUAL_ENV=/home/seluser/.venv
+ENV PATH="/home/seluser/.venv/bin:${PATH}"
 
 # Switch back to default user
 USER 1200

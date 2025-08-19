@@ -110,7 +110,9 @@ class ConfigManager:
         channels_file = os.path.join(self.config_dir, "channels.yaml")
         try:
             with open(channels_file, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f)
+                data = yaml.safe_load(f)
+                # yaml.safe_load returns None for empty files
+                return data or {}
         except FileNotFoundError:
             return {}
     
