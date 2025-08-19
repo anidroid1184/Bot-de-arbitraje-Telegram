@@ -11,6 +11,8 @@ services:
     shm_size: 2g
     tty: true
     stdin_open: true
+    profiles:
+      - novpn
     ports:
       - "4444:4444"  # Selenium Grid Standalone
       - "7900:7900"  # noVNC para ver la GUI
@@ -34,10 +36,15 @@ services:
 
   # Servicio "bot" de ejecución única: abre Betburger y Surebet, espera (300s por defecto) y termina.
   bot-once:
-    image: python:3.11-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    image: bot-runner:py311
     container_name: bot-once
     restart: "no"
     working_dir: /app
+    profiles:
+      - novpn
     env_file:
       - .env
     environment:
@@ -54,7 +61,69 @@ services:
       selenium-firefox:
         condition: service_healthy
     command: >
-      bash -lc "pip install --no-cache-dir -r requirements.txt && python test_tab_connection.py"
+      python test_tab_connection.py
+
+  # Selenium con extensión VPN preinstalada (imagen custom)
+  selenium-firefox-vpn:
+    build:
+      context: .
+      dockerfile: Dockerfile.firefox-vpn
+    image: selenium/standalone-firefox:vpn-4.23.0
+    container_name: selenium-firefox-vpn
+    restart: unless-stopped
+    shm_size: 2g
+    tty: true
+    stdin_open: true
+    profiles:
+      - vpn
+    ports:
+      - "4444:4444"  # Selenium Grid Standalone
+      - "7900:7900"  # noVNC para ver la GUI
+    environment:
+      # - SE_VNC_NO_PASSWORD=1
+      - SE_NODE_MAX_SESSIONS=1
+      - SE_SESSION_REQUEST_TIMEOUT=300
+      - SE_OPENTELEMETRY_TRACING=false
+      - TZ=America/Bogota
+    volumes:
+      # Persistir el perfil para que se mantengan configuraciones y permisos de la extensión
+      - selenium_profile_vpn:/home/seluser
+      # La imagen ya incluye la extensión vía políticas.
+      - ./extensions:/opt/extensions:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # Bot "una vez" contra el servicio con VPN
+  bot-once-vpn:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    image: bot-runner:py311
+    container_name: bot-once-vpn
+    restart: "no"
+    working_dir: /app
+    profiles:
+      - vpn
+    env_file:
+      - .env
+    environment:
+      WEBDRIVER_REMOTE_URL: http://selenium-firefox-vpn:4444/wd/hub
+      SEED_TEST_TABS: "true"
+      SEED_WAIT_SECONDS: "300"
+      TEST_BETBURGER_URL: https://betburger.com
+      TEST_SUREBET_URL: https://es.surebet.com
+      # Pause before opening tabs so you can click CONNECT in SandVPN UI
+      PRE_SEED_WAIT_SECONDS: "60"
+    volumes:
+      - ./:/app
+    depends_on:
+      selenium-firefox-vpn:
+        condition: service_healthy
+    command: >
+      python test_tab_connection.py
 
 # Uso:
 #   1) Ver logs en la terminal y no cerrarla automáticamente (modo adjunto):
@@ -70,4 +139,6 @@ services:
 
 volumes:
   selenium_profile:
+    driver: local
+  selenium_profile_vpn:
     driver: local

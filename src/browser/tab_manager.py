@@ -38,6 +38,13 @@ class TabManager:
             if self.config.headless_mode:
                 options.add_argument("--headless")
 
+            # Optional: run entire session in Private Browsing (Incognito)
+            # Enabled only when BROWSER_PRIVATE_MODE is truthy (e.g., in VPN profile)
+            if os.environ.get("BROWSER_PRIVATE_MODE", "false").lower() in ("1", "true", "yes", "on"): 
+                # -private makes all windows private; also set the pref to autostart private mode
+                options.add_argument("-private")
+                options.set_preference("browser.privatebrowsing.autostart", True)
+
             # Apply optional proxy configuration via Firefox preferences
             # We use prefs instead of Selenium Proxy object for better compatibility with Remote sessions.
             if getattr(self.config, "proxy_type", None) and getattr(self.config, "proxy_host", None) and getattr(self.config, "proxy_port", None):

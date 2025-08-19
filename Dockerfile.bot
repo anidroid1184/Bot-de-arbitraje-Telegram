@@ -1,0 +1,20 @@
+# Lightweight Python runner image with cached dependencies
+FROM python:3.11-slim
+
+# Prevents Python from writing .pyc files and enables unbuffered logs
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Working directory
+WORKDIR /app
+
+# System deps (optional): add here if some wheels need build tools
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#     build-essential && rm -rf /var/lib/apt/lists/*
+
+# Copy only requirements first to leverage Docker layer caching
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm -f /tmp/requirements.txt
+
+# Default command just prints help; overridden by compose service command
+CMD ["python", "-c", "print('Bot runner image ready')"]

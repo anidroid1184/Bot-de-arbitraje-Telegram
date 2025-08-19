@@ -5,17 +5,23 @@ Tests connection to Firefox and lists all open tabs.
 import sys
 import os
 import time
+from pathlib import Path
 
 # Ensure we can import as package 'src' when running directly
+base_dir: Path
 try:
-    _this_file = __file__  # may fail in some invocation contexts
-    CURRENT_DIR = os.path.dirname(os.path.abspath(_this_file))
-except Exception as e:
-    # Fall back to current working directory
-    print(e)
-    CURRENT_DIR = os.getcwd()
-    
-PROJECT_ROOT = os.path.abspath(CURRENT_DIR)
+    # Preferred: directory of this script
+    base_dir = Path(__file__).resolve(strict=False).parent
+except Exception as e1:
+    try:
+        # Fallback: directory of the invoked script path
+        base_dir = Path(sys.argv[0]).resolve(strict=False).parent
+    except Exception as e2:
+        # Last resort: resolve current directory token without calling os.getcwd()
+        # (Path('.').resolve() does not raise if CWD is temporarily invalid in some shells)
+        base_dir = Path('.').resolve()
+
+PROJECT_ROOT = str(base_dir)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -44,6 +50,12 @@ def test_tab_connection():
             logger.info("Make sure Firefox is running with: firefox --remote-debugging-port=9222")
             return False
         
+        # Optional pre-wait: allow user to interact with the browser (e.g., click CONNECT on VPN UI)
+        pre_wait_seconds = int(os.environ.get("PRE_SEED_WAIT_SECONDS", "0"))
+        if pre_wait_seconds > 0:
+            logger.info(f"Pre-waiting {pre_wait_seconds}s before opening tabs (manual VPN connect window)")
+            time.sleep(pre_wait_seconds)
+
         # Seed relevant tabs by default (Betburger and Surebet) for remote sessions (e.g., Docker Selenium)
         # Controlled via SEED_TEST_TABS env var; default: true
         if os.environ.get("SEED_TEST_TABS", "true").lower() in ("1", "true", "yes"): 
