@@ -1,0 +1,23 @@
+# Single-container image: Selenium Firefox + Python runtime
+FROM selenium/standalone-firefox:4.23.0
+
+# Install Python 3 + pip
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Workdir for the app
+WORKDIR /app
+
+# Pre-install dependencies for faster start (optional; falls back to runtime install if missing)
+COPY requirements.txt /app/requirements.txt
+RUN pip3 install --no-cache-dir -r /app/requirements.txt || true
+
+# Switch back to default user
+USER 1200
+
+# The Selenium entrypoint remains default; Python scripts will be executed via `docker compose exec`

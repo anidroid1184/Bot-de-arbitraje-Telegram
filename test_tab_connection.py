@@ -28,13 +28,51 @@ if PROJECT_ROOT not in sys.path:
 from src.config.settings import ConfigManager, BotConfig
 from src.browser.tab_manager import TabManager
 from src.utils.logger import setup_logger
+from src.utils.telegram_notifier import TelegramNotifier
 from selenium.webdriver.support.ui import WebDriverWait
+
+def _detect_robot_check(tab_manager: TabManager) -> str:
+    """Return a short reason string if a human/robot check is detected, else ''.
+    Heuristics only, non-invasive.
+    """
+    try:
+        d = tab_manager.driver
+        page_text = (d.find_element("tag name", "body").text or "").lower()
+        title = (d.title or "").lower()
+        # Common markers
+        markers = [
+            "i'm not a robot", "im not a robot", "no soy un robot", "captcha",
+            "verify you are human", "are you a human", "hcaptcha", "recaptcha",
+            "please verify", "solve the challenge"
+        ]
+        if any(m in page_text or m in title for m in markers):
+            return "Text markers of CAPTCHA/verification detected"
+        # Look for common recaptcha/hcaptcha containers/iframes
+        try:
+            iframes = d.find_elements("tag name", "iframe")
+            for f in iframes:
+                src = (f.get_attribute("src") or "").lower()
+                if "recaptcha" in src or "hcaptcha" in src:
+                    return "reCAPTCHA/hCaptcha iframe detected"
+        except Exception:
+            pass
+        # hCaptcha/reCAPTCHA widgets as divs
+        try:
+            widgets = d.find_elements("css selector", "div.g-recaptcha, div.hcaptcha, div#captcha, form#captcha")
+            if widgets:
+                return "CAPTCHA widget container detected"
+        except Exception:
+            pass
+    except Exception:
+        return ""
+    return ""
 
 def test_tab_connection():
     """Test connecting to existing Firefox tabs and listing them"""
     
     # Setup logging
     logger = setup_logger(log_level="INFO", service_name="tab_test")
+    notifier = TelegramNotifier()
     
     logger.info("Starting tab connection test")
     
@@ -113,6 +151,18 @@ def test_tab_connection():
                     url = tab_manager.driver.current_url
                     logger.info(f"    Title: {title}")
                     logger.info(f"    URL: {url}")
+
+                    # Heuristic detection of robot checks / captcha
+                    reason = _detect_robot_check(tab_manager)
+                    if reason:
+                        msg = (
+                            "⚠️ Verificación humana detectada (CAPTCHA/anti-bot)\n"
+                            f"Motivo: {reason}\n"
+                            f"Título: {title}\n"
+                            f"URL: {url}"
+                        )
+                        logger.warning("Robot-check detected; notifying support", reason=reason)
+                        notifier.send_text(msg)
                 except Exception as e:
                     logger.error(f"    Error getting tab info: {str(e)}")
         
