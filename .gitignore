@@ -7,12 +7,21 @@ __pycache__/
 
 # Envs
 .env
+.env.local
+.env.*
+!.env.example
 .venv/
 
 # Logs & reports
 logs/
 reports/
 coverage/
+*.log
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # OS/IDE
 .DS_Store
@@ -22,9 +31,20 @@ Thumbs.db
 
 # Docker artifacts
 *.pid
+docker-compose.override.yml
 
 # archivos del proyecto
 /archivos_proyecto
  
 # vpn artifacts (do not track)
 /.vpn/
+
+# Local config overrides (do not commit secrets)
+config/channels.local.yaml
+
+# Common archives downloaded during setup
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip

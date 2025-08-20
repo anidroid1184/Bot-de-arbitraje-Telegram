@@ -3,46 +3,46 @@
 
 betburger_profiles:
   profile_1:
-    channel_id: "@channel_profile_1"
+    channel_id: "-1003030518216"
     description: "Betburger Profile 1 - High ROI alerts"
     filters:
       - min_roi: 5.0
       - sports: ["football", "tennis"]
   
   profile_2:
-    channel_id: "@channel_profile_2" 
+    channel_id: "-1002907876107" 
     description: "Betburger Profile 2 - Basketball alerts"
     filters:
       - min_roi: 3.0
       - sports: ["basketball"]
   
   profile_3:
-    channel_id: "@channel_profile_3"
+    channel_id: "-1002546933129"
     description: "Betburger Profile 3 - All sports low ROI"
     filters:
       - min_roi: 2.0
 
   profile_4:
-    channel_id: "@channel_profile_4"
+    channel_id: "-1003012570849"
     description: "Betburger Profile 4 - High stakes"
     filters:
       - min_roi: 4.0
 
   profile_5:
-    channel_id: "@channel_profile_5"
+    channel_id: "-1002989848425"
     description: "Betburger Profile 5 - Quick bets"
     filters:
       - min_roi: 3.5
 
   profile_6:
-    channel_id: "@channel_profile_6"
+    channel_id: "-1002959163339"
     description: "Betburger Profile 6 - Premium alerts"
     filters:
       - min_roi: 6.0
 
 surebet_profiles:
   valuebets_main:
-    channel_id: "@surebet_valuebets"
+    channel_id: "-1003042588487"
     description: "Surebet Valuebets - Main channel"
     filters:
       - min_value: 5.0
@@ -51,5 +51,5 @@ surebet_profiles:
 # Support channels
 support:
   technical_alerts:
-    channel_id: "@bot_technical_support"
+    channel_id: "-1002937519273"
     description: "Technical errors and reconnection alerts"
