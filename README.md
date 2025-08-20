@@ -1,55 +1,66 @@
 # Bot-de-arbitraje-Telegram
-Bot para scraping de alertas de arbitraje (Betburger / Surebet) con ejecución dockerizada, perfiles con/ sin VPN y pruebas rápidas.
+Bot para scraping de alertas de arbitraje (Betburger / Surebet) ejecutado localmente en Python (sin Docker, sin VPN).
 
 ## Requisitos
-- Docker y Docker Compose
-- Python 3.11 (solo si ejecutarás scripts fuera de contenedor)
+- Python 3.11+
+- Firefox instalado (Selenium Manager descargará geckodriver automáticamente)
 
 ## Estructura relevante
-- `docker-compose.selenium.yml`: servicios Selenium (Firefox) y bot (`bot-once`, `bot-once-vpn`).
-- `Dockerfile.firefox-vpn`: imagen Firefox con política que instala la extensión SandVPN.
-- `Dockerfile.bot`: imagen runner de Python con dependencias cacheadas (instala `requirements.txt` en build-time).
-- `firefox-policies/policies.json`: instala `extensions/sandvpn-*.xpi` dentro del contenedor.
-- `scripts/run_stack.sh`: lanzador con flags `--vpn`, `--attach`, `--once`.
-- `test_tab_connection.py`: prueba de conexión y siembra de pestañas.
+- `src/`: código fuente del bot.
+  - `src/browser/`: conexión Selenium y gestión de pestañas (`TabManager`, `AuthManager`).
+  - `src/config/`: carga de `.env` y `channels.yaml` (`ConfigManager`).
+  - `src/utils/`: logger y notificador de Telegram.
+  - `src/smoke_login_and_scrape.py`: smoke test local de login+scraping.
+- `logs/raw_html/`: capturas HTML crudo generadas por los scripts.
+- `.env`: variables de entorno (no se versiona). Usa `.env.example` como guía.
 
-## Perfiles de ejecución
-- __novpn__: Selenium Firefox estándar. Útil para desarrollo básico.
-- __vpn__: Selenium Firefox con extensión SandVPN instalada y perfil persistente.
+## Configuración de entorno (.env)
+Completa tu `.env` en la raíz del proyecto con:
 
-## Build inicial
-```bash
-# Desde Bot-de-arbitraje-Telegram
-docker compose -f docker-compose.selenium.yml --profile novpn build selenium-firefox bot-once
-docker compose -f docker-compose.selenium.yml --profile vpn   build selenium-firefox-vpn bot-once-vpn
+```
+TELEGRAM_BOT_TOKEN=...            # opcional para notificación
+TELEGRAM_SUPPORT_CHANNEL_ID=...   # opcional; usar el chat_id -100...
+
+BETBURGER_USERNAME=...
+BETBURGER_PASSWORD=...
+SUREBET_USERNAME=...
+SUREBET_PASSWORD=...
+
+HEADLESS_MODE=false               # true para ejecución sin UI
+BROWSER_TIMEOUT=30
 ```
 
-## Ejecución rápida
-- Sin VPN (normal):
+## Instalación (local)
 ```bash
-./scripts/run_stack.sh --once
-# GUI noVNC: http://localhost:7900  | Selenium: http://localhost:4444/wd/hub
+# Crear entorno virtual (ejemplo Linux/macOS)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# En Windows PowerShell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-- Con VPN (sin incógnito, pre‑espera para conectar SandVPN):
+## Ejecución rápida (local)
 ```bash
-./scripts/run_stack.sh --vpn --once
-# Tendrás PRE_SEED_WAIT_SECONDS (por defecto 60s) para pulsar CONNECT en la UI de SandVPN.
-# Luego se abren 2 pestañas (Betburger/Surebet) y el script espera SEED_WAIT_SECONDS (300s por defecto).
+# Prueba de login + scraping y guardado de HTML
+python -m src.smoke_login_and_scrape
+
+# Prueba de conexión de pestañas y detección de CAPTCHA (opcional)
+python test_tab_connection.py
 ```
 
-## Variables de entorno principales
-- `WEBDRIVER_REMOTE_URL`: URL del Selenium remoto (configurada en compose).
-- `SEED_TEST_TABS` (true/false): abrir pestañas de prueba.
-- `PRE_SEED_WAIT_SECONDS`: pausa previa para conectar VPN manualmente.
-- `SEED_WAIT_SECONDS`: espera posterior para depuración en noVNC.
-- `TEST_BETBURGER_URL`, `TEST_SUREBET_URL`: URLs objetivo.
-- `BROWSER_PRIVATE_MODE` (opcional): si se activa, Firefox arranca en privado (no activo por defecto).
-
-## Persistencia del perfil (VPN)
-El servicio `selenium-firefox-vpn` monta `selenium_profile_vpn:/home/seluser`, por lo que ajustes (permisos de extensión, preferencias) persisten entre reinicios.
+## Logs y resultados
+- HTML crudo: `logs/raw_html/` (por script, timestamped)
+- Logs de ejecución: según configuración en `.env` (`LOG_FILE` por defecto `logs/bot.log`)
 
 ## Próximos pasos
-- Scraping básico de Betburger/Surebet desde pestañas activas.
-- Automatizar “CONNECT” de SandVPN y validar IP pública.
+- Parsing estructurado de Betburger y Surebet (JSON con campos clave).
+- Envío de alertas a Telegram con formato enriquecido.
+- Asignación de perfiles/filtros a canales por `config/channels.yaml`.
+
+## Nota sobre Docker/VPN
+Este proyecto se ejecuta localmente sin Docker ni VPN. Los artefactos históricos de VPN/Docker se han movido a la carpeta `.vpn/` y están excluidos del repositorio.
 

@@ -62,6 +62,18 @@ class ConfigManager:
         self.bot = self._load_bot_config()
         self.channels = self._load_channel_mapping()
     
+    @staticmethod
+    def _sanitize_url(value: Optional[str], default: str) -> str:
+        """Return value if it looks like an HTTP(S) URL; otherwise return default.
+
+        Prevents accidental Windows/WSL file paths (e.g., ".venv/bin/python") from
+        being used as navigation targets by Selenium (which would turn them into
+        file:/// URLs).
+        """
+        if value and value.strip().lower().startswith(("http://", "https://")):
+            return value.strip()
+        return default
+
     def _load_telegram_config(self) -> TelegramConfig:
         """Load Telegram configuration from environment"""
         return TelegramConfig(
@@ -71,21 +83,26 @@ class ConfigManager:
     
     def _load_betburger_config(self) -> BetburgerConfig:
         """Load Betburger web scraping configuration from environment"""
+        env_base = os.getenv("BETBURGER_BASE_URL")
+        env_login = os.getenv("BETBURGER_LOGIN_URL")
         return BetburgerConfig(
             username=os.getenv("BETBURGER_USERNAME"),
             password=os.getenv("BETBURGER_PASSWORD"),
-            base_url=os.getenv("BETBURGER_BASE_URL", "https://betburger.com"),
-            login_url=os.getenv("BETBURGER_LOGIN_URL", "https://betburger.com/users/sign_in")
+            base_url=self._sanitize_url(env_base, "https://betburger.com"),
+            login_url=self._sanitize_url(env_login, "https://betburger.com/users/sign_in"),
         )
     
     def _load_surebet_config(self) -> SurebetConfig:
         """Load Surebet web scraping configuration from environment"""
+        env_base = os.getenv("SUREBET_BASE_URL")
+        env_login = os.getenv("SUREBET_LOGIN_URL")
+        env_valuebets = os.getenv("SUREBET_VALUEBETS_URL")
         return SurebetConfig(
             username=os.getenv("SUREBET_USERNAME"),
             password=os.getenv("SUREBET_PASSWORD"),
-            base_url=os.getenv("SUREBET_BASE_URL", "https://es.surebet.com"),
-            login_url=os.getenv("SUREBET_LOGIN_URL", "https://es.surebet.com/users/sign_in"),
-            valuebets_url=os.getenv("SUREBET_VALUEBETS_URL", "https://es.surebet.com/valuebets")
+            base_url=self._sanitize_url(env_base, "https://es.surebet.com"),
+            login_url=self._sanitize_url(env_login, "https://es.surebet.com/users/sign_in"),
+            valuebets_url=self._sanitize_url(env_valuebets, "https://es.surebet.com/valuebets"),
         )
     
     def _load_bot_config(self) -> BotConfig:

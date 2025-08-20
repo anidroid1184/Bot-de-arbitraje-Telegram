@@ -76,14 +76,31 @@ class TabManager:
             # If a remote WebDriver URL is provided, connect to it (e.g., Selenium Grid/Standalone in Docker)
             remote_url = os.environ.get("WEBDRIVER_REMOTE_URL")
             if remote_url:
-                self.driver = webdriver.Remote(command_executor=remote_url, options=options)
-                logger.info("Connected to remote Selenium Firefox session", remote_url=remote_url)
-                return True
+                try:
+                    self.driver = webdriver.Remote(command_executor=remote_url, options=options)
+                    logger.info("Connected to remote Selenium Firefox session", remote_url=remote_url)
+                    return True
+                except WebDriverException as re:
+                    # Fall back to local Firefox if remote is not reachable
+                    logger.warning(
+                        "Remote WebDriver unavailable; falling back to local Firefox",
+                        remote_url=remote_url,
+                        error=str(re),
+                    )
             
             # Connect to existing local Firefox instance
-            # Note: This path expects Firefox with remote debugging if needed by the environment
-            # firefox --remote-debugging-port=9222
-            options.add_argument("--remote-debugging-port=9222")
+            # Only enable remote debugging if explicitly requested (debugging)
+            if os.environ.get("BROWSER_DEBUG", "false").lower() in ("1", "true", "yes", "on"):
+                options.add_argument("--remote-debugging-port=9222")
+
+            # Allow overriding Firefox binary location (useful in WSL where Firefox Snap isn't supported)
+            firefox_binary = os.environ.get("FIREFOX_BINARY")
+            if firefox_binary:
+                try:
+                    options.binary_location = firefox_binary
+                    logger.info("Using custom Firefox binary", binary=firefox_binary)
+                except Exception as be:
+                    logger.warning("Failed to set custom Firefox binary; falling back to default", error=str(be))
             
             self.driver = webdriver.Firefox(options=options)
             logger.info("Connected to local Firefox browser session")

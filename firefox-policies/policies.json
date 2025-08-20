@@ -1,9 +1,0 @@
-{
-  "policies": {
-    "Extensions": {
-      "Install": [
-        "file:///opt/extensions/sandvpn-9.5.0.xpi"
-      ]
-    }
-  }
-}

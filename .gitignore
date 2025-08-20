@@ -25,3 +25,6 @@ Thumbs.db
 
 # archivos del proyecto
 /archivos_proyecto
+ 
+# vpn artifacts (do not track)
+/.vpn/

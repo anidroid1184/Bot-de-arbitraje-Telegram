@@ -6,6 +6,7 @@ If configuration is missing, it logs and no-ops.
 from __future__ import annotations
 
 import os
+import asyncio
 from typing import Optional
 from dataclasses import dataclass
 
@@ -57,8 +58,18 @@ class TelegramNotifier:
         if not target:
             logger.warning("No chat_id provided and TELEGRAM_SUPPORT_CHANNEL_ID is missing")
             return False
+        
+        async def _async_send() -> None:
+            await self._bot.send_message(chat_id=target, text=text, disable_web_page_preview=True)
+
         try:
-            self._bot.send_message(chat_id=target, text=text, disable_web_page_preview=True)
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're already in an event loop, schedule the task and do not block
+                loop.create_task(_async_send())
+            except RuntimeError:
+                # No running loop; run synchronously
+                asyncio.run(_async_send())
             logger.info("Sent Telegram message", length=len(text))
             return True
         except Exception as e:
