@@ -124,14 +124,22 @@ class ConfigManager:
     
     def _load_channel_mapping(self) -> Dict:
         """Load channel mapping from YAML file"""
-        channels_file = os.path.join(self.config_dir, "channels.yaml")
-        try:
-            with open(channels_file, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-                # yaml.safe_load returns None for empty files
-                return data or {}
-        except FileNotFoundError:
-            return {}
+        # Preferred path: src/config/config.yml (co-located with this module)
+        src_dir = os.path.dirname(__file__)
+        project_root = os.path.abspath(os.path.join(src_dir, os.pardir))
+        preferred = os.path.join(src_dir, "config.yml")
+        # Backward-compatible fallback: repo_root/config/channels.yaml
+        fallback = os.path.join(project_root, self.config_dir, "channels.yaml")
+
+        for path in (preferred, fallback):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                    if data:
+                        return data
+            except FileNotFoundError:
+                continue
+        return {}
     
     def get_channel_for_profile(self, platform: str, profile: str) -> Optional[str]:
         """Get Telegram channel ID for a specific profile"""

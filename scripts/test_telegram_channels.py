@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Test Telegram delivery to all channels defined in config/channels.yaml.
+Test Telegram delivery to all channels defined in configuration.
 
 - Loads .env (TELEGRAM_BOT_TOKEN is required)
-- Reads channel mappings from config/channels.yaml
+- Reads channel mappings from src/config/config.yml if present,
+  otherwise from config/channels.yaml
 - Sends a short ping message to each channel and reports the result
 
 Usage:
@@ -28,7 +29,9 @@ from telegram import Bot
 from telegram.constants import ParseMode
 
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "channels.yaml")
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+PREFERRED_CONFIG = os.path.join(REPO_ROOT, "src", "config", "config.yml")
+FALLBACK_CONFIG = os.path.join(REPO_ROOT, "config", "channels.yaml")
 
 
 def load_env() -> None:
@@ -39,13 +42,20 @@ def load_env() -> None:
         load_dotenv(env_path)
 
 
+def _pick_config_path() -> str:
+    if os.path.exists(PREFERRED_CONFIG):
+        return PREFERRED_CONFIG
+    return FALLBACK_CONFIG
+
+
 def load_channels() -> List[Tuple[str, str]]:
-    """Parse channels.yaml and return a flat list of (name, channel_id) pairs.
+    """Parse config and return a flat list of (name, channel_id) pairs.
 
     Returns:
         List of tuples like [("betburger.profile_1", "-100123"), ("support.technical_alerts", "-100456"), ...]
     """
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config_path = _pick_config_path()
+    with open(config_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
     pairs: List[Tuple[str, str]] = []
@@ -99,7 +109,7 @@ async def main_async() -> int:
 
     channels = load_channels()
     if not channels:
-        print(f"WARN: No channels found in {CONFIG_PATH}")
+        print(f"WARN: No channels found in {_pick_config_path()}")
         return 0
 
     bot = Bot(token=token)
