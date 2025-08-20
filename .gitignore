@@ -22,3 +22,6 @@ Thumbs.db
 
 # Docker artifacts
 *.pid
+
+# archivos del proyecto
+/archivos_proyecto
