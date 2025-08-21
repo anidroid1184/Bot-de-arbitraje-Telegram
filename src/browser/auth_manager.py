@@ -2,7 +2,9 @@
 Authentication manager for web scraping platforms.
 Handles automatic login and session management for Betburger and Surebet.
 """
+import os
 import time
+from pathlib import Path
 from typing import Optional, Tuple
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -20,6 +22,65 @@ class AuthManager:
     def __init__(self, bot_config: BotConfig):
         self.bot_config = bot_config
         self.login_timeout = 30  # seconds to wait for login elements
+
+    # --- helpers ---------------------------------------------------------
+    def _ensure_dir(self, p: Path) -> None:
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+    def _debug_capture(self, driver, prefix: str) -> None:
+        """Save page HTML and screenshot to logs for diagnostics."""
+        try:
+            root = Path(os.getcwd())
+            html_dir = root / "logs" / "raw_html"
+            png_dir = root / "logs" / "screenshots"
+            self._ensure_dir(html_dir)
+            self._ensure_dir(png_dir)
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            html_path = html_dir / f"{prefix}_{ts}.html"
+            png_path = png_dir / f"{prefix}_{ts}.png"
+            # Write HTML
+            try:
+                src = driver.page_source
+                html_path.write_text(src or "", encoding="utf-8")
+            except Exception:
+                pass
+            # Save screenshot
+            try:
+                driver.save_screenshot(str(png_path))
+            except Exception:
+                pass
+            logger.info("Saved debug artifacts", html=str(html_path), screenshot=str(png_path))
+        except Exception:
+            # Best-effort; do not raise
+            pass
+
+    def _dismiss_cookies_banner_surebet(self, driver) -> None:
+        """Best-effort cookie consent dismissal for Surebet.
+
+        Tries multiple common selectors/texts in ES/EN. Safe to call even if not present.
+        """
+        try:
+            # Common buttons/links for cookie consent
+            candidates = [
+                "//button[contains(translate(., 'ACEPTAR', 'aceptar'), 'acept') or contains(translate(., 'ACEPTO', 'acepto'), 'acepto') or contains(translate(., 'AGREE', 'agree'), 'agree')]",
+                "//button[contains(., 'OK') or contains(., 'Ok') or contains(., 'ok')]",
+                "//button[contains(translate(., 'CONTINUAR', 'continuar'), 'continuar')]",
+                "//a[contains(translate(., 'ACEPTAR', 'aceptar'), 'acept') or contains(., 'Agree')]",
+                "//div[contains(@class,'cookie') or contains(@id,'cookie')]//button",
+            ]
+            for xp in candidates:
+                try:
+                    el = driver.find_element(By.XPATH, xp)
+                    el.click()
+                    time.sleep(0.3)
+                    break
+                except Exception:
+                    continue
+        except Exception:
+            pass
     
     def is_logged_in_betburger(self, driver) -> bool:
         """
@@ -142,8 +203,8 @@ class AuthManager:
             # Check for Surebet-specific login indicators
             user_indicators = [
                 "//a[contains(@href, '/logout')]",
-                "//div[contains(@class, 'user-info')]",
-                "//span[contains(@class, 'user-name')]",
+                "//div[contains(@class, 'user-info') or contains(@class,'user-menu')]",
+                "//span[contains(@class, 'user-name') or contains(@class,'username')]",
             ]
             
             for selector in user_indicators:
@@ -156,7 +217,7 @@ class AuthManager:
             
             # Check URL patterns
             current_url = driver.current_url
-            if "/valuebets" in current_url or "/account" in current_url:
+            if "/valuebets" in current_url or "/account" in current_url or "/users/" in current_url:
                 logger.debug("Surebet login confirmed via URL pattern")
                 return True
             
@@ -196,7 +257,10 @@ class AuthManager:
             
             # Wait for login form to load
             wait = WebDriverWait(driver, self.login_timeout)
-            
+
+            # Dismiss cookies banner if present
+            self._dismiss_cookies_banner_surebet(driver)
+
             # Find and fill email field (Surebet uses user[email])
             email_field = wait.until(
                 EC.presence_of_element_located((By.XPATH, "//input[@name='user[email]' or @type='email']"))
@@ -213,15 +277,33 @@ class AuthManager:
             submit_button = driver.find_element(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")
             submit_button.click()
             
-            # Wait for redirect
-            time.sleep(3)
-            
+            # Wait for redirect or authenticated indicators
+            end_time = time.time() + 20
+            success = False
+            while time.time() < end_time:
+                try:
+                    if self.is_logged_in_surebet(driver):
+                        success = True
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.5)
+
             # Verify login success
-            if self.is_logged_in_surebet(driver):
+            if success:
                 logger.info("Surebet login successful")
                 return True
             else:
-                logger.error("Surebet login failed - credentials may be incorrect")
+                # Try to detect common blockers
+                try:
+                    # Captcha presence heuristic
+                    if driver.find_elements(By.XPATH, "//iframe[contains(@src,'captcha') or contains(@class,'captcha')] | //div[contains(@class,'g-recaptcha')]"):
+                        logger.warning("Surebet login may be blocked by CAPTCHA")
+                except Exception:
+                    pass
+
+                self._debug_capture(driver, "surebet_login_FAIL")
+                logger.error("Surebet login failed - credentials may be incorrect or blocked by consent/captcha")
                 return False
                 
         except TimeoutException:
