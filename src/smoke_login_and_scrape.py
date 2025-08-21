@@ -32,6 +32,13 @@ from src.utils.telegram_notifier import TelegramNotifier  # type: ignore
 from src.config.settings import ConfigManager  # type: ignore
 from src.browser.tab_manager import TabManager  # type: ignore
 from src.browser.auth_manager import AuthManager  # type: ignore
+from src.browser.betburger_nav import (  # type: ignore
+    open_bookmakers_page,
+    open_filters_page,
+    open_filters_valuebet_prematch,
+    open_filter_by_name_or_id,
+)
+from src.browser.surebet_nav import select_saved_filter  # type: ignore
 
 logger = get_module_logger("smoke_login_and_scrape")
 
@@ -99,12 +106,33 @@ def main() -> int:
             tm.driver.get(cfg.betburger.login_url or cfg.betburger.base_url)
             if auth.ensure_authenticated(tm.driver, "betburger", cfg.betburger):
                 bet_ok = True
-                # Después de login, ir a base_url para capturar HTML (o página que quieras validar)
-                logger.info("Navigating to Betburger base", url=cfg.betburger.base_url)
-                tm.driver.get(cfg.betburger.base_url)
-                time.sleep(2)
-                bet_html = tm.driver.page_source
-                bet_path = save_html(out_dir, "betburger", bet_html)
+                # Navegación opcional vía sidebar según variables de entorno
+                nav_target = os.getenv("SMOKE_BETBURGER_NAV", "base").lower()
+                filt_query = os.getenv("SMOKE_BETBURGER_FILTER", "").strip()
+                logger.info("Betburger nav target", target=nav_target, filter=filt_query or "<none>")
+
+                if nav_target == "filters":
+                    if open_filters_page(tm.driver):
+                        # Abrimos la pestaña de Valuebet Prematch por defecto
+                        open_filters_valuebet_prematch(tm.driver)
+                        # Si se indica, intentamos abrir un filtro específico
+                        if filt_query:
+                            open_filter_by_name_or_id(tm.driver, filt_query)
+                    time.sleep(2)
+                    bet_html = tm.driver.page_source
+                    bet_path = save_html(out_dir, "betburger_filters", bet_html)
+                elif nav_target == "bookmakers":
+                    if open_bookmakers_page(tm.driver):
+                        time.sleep(2)
+                    bet_html = tm.driver.page_source
+                    bet_path = save_html(out_dir, "betburger_bookmakers", bet_html)
+                else:
+                    # Después de login, ir a base_url para capturar HTML
+                    logger.info("Navigating to Betburger base", url=cfg.betburger.base_url)
+                    tm.driver.get(cfg.betburger.base_url)
+                    time.sleep(2)
+                    bet_html = tm.driver.page_source
+                    bet_path = save_html(out_dir, "betburger", bet_html)
             else:
                 logger.error("Login Betburger fallido")
         except Exception as e:
@@ -121,8 +149,16 @@ def main() -> int:
                 logger.info("Navigating to Surebet target", url=target_url)
                 tm.driver.get(target_url)
                 time.sleep(2)
+                # Si se especifica un filtro guardado, seleccionarlo en el sidebar
+                sb_filter = os.getenv("SMOKE_SUREBET_FILTER", "").strip()
+                if sb_filter:
+                    logger.info("Surebet selecting saved filter", name=sb_filter)
+                    select_saved_filter(tm.driver, sb_filter)
+                    time.sleep(1.5)
+                # Capturar HTML resultante
                 sure_html = tm.driver.page_source
-                sure_path = save_html(out_dir, "surebet", sure_html)
+                name = "surebet_filtered" if sb_filter else "surebet"
+                sure_path = save_html(out_dir, name, sure_html)
             else:
                 logger.error("Login Surebet fallido")
         except Exception as e:

@@ -33,6 +33,11 @@ class TelegramNotifier:
     def __init__(self, config: Optional[NotifierConfig] = None) -> None:
         token = os.getenv("TELEGRAM_BOT_TOKEN", "")
         chat_id = os.getenv("TELEGRAM_SUPPORT_CHANNEL_ID")
+        if not chat_id:
+            # Fallback to YAML configuration if env var is missing
+            yaml_chat_id = self._load_support_channel_from_yaml()
+            if yaml_chat_id:
+                chat_id = yaml_chat_id
         if config is not None:
             token = config.bot_token or token
             chat_id = config.default_chat_id or chat_id
@@ -50,6 +55,39 @@ class TelegramNotifier:
                 except Exception as e:
                     logger.error("Failed to initialize Telegram Bot", error=str(e))
                     self._bot = None
+
+    @staticmethod
+    def _load_support_channel_from_yaml() -> Optional[str]:
+        """Try to read support channel from src/config/config.yml.
+
+        Preference order:
+        1) defaults.notifications.error_channel
+        2) support.technical_alerts.channel_id
+        """
+        try:
+            import yaml  # local import to avoid hard dependency elsewhere
+            here = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(here, os.pardir, "config", "config.yml")
+            config_path = os.path.abspath(config_path)
+            if not os.path.exists(config_path):
+                return None
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            # 1) defaults.notifications.error_channel
+            defaults = data.get("defaults") or {}
+            notifications = defaults.get("notifications") or {}
+            error_channel = notifications.get("error_channel")
+            if error_channel:
+                return str(error_channel).strip()
+            # 2) support.technical_alerts.channel_id
+            support = data.get("support") or {}
+            tech = support.get("technical_alerts") or {}
+            cid = tech.get("channel_id")
+            if cid:
+                return str(cid).strip()
+        except Exception:
+            return None
+        return None
 
     def send_text(self, text: str, chat_id: Optional[str] = None) -> bool:
         if not self._bot or not self.token:
