@@ -2,47 +2,64 @@
 # Each profile/filter gets its own channel
 
 betburger_profiles:
-  profile_1:
-    channel_id: "-1003030518216"
+  bet365_valuebets:
+    channel_id: "-1002993087103"
     description: "Betburger Profile 1 - High ROI alerts"
     filters:
       - min_roi: 5.0
       - sports: ["football", "tennis"]
   
-  profile_2:
-    channel_id: "-1002907876107" 
+  winamax-valuebets:
+    channel_id: "-1002868073429" 
     description: "Betburger Profile 2 - Basketball alerts"
     filters:
       - min_roi: 3.0
       - sports: ["basketball"]
   
-  profile_3:
-    channel_id: "-1002546933129"
+  codere_valuebets:
+    channel_id: "-1003085949789"
     description: "Betburger Profile 3 - All sports low ROI"
     filters:
       - min_roi: 2.0
 
-  profile_4:
-    channel_id: "-1003012570849"
+  retabet_valuebets:
+    channel_id: "-1002972972758"
     description: "Betburger Profile 4 - High stakes"
     filters:
       - min_roi: 4.0
 
-  profile_5:
-    channel_id: "-1002989848425"
+  winamax-bet365:
+    channel_id: "-1003088121672"
     description: "Betburger Profile 5 - Quick bets"
     filters:
       - min_roi: 3.5
 
-  profile_6:
-    channel_id: "-1002959163339"
-    description: "Betburger Profile 6 - Premium alerts"
-    filters:
-      - min_roi: 6.0
 
 surebet_profiles:
-  valuebets_main:
-    channel_id: "-1003042588487"
+
+  ev-surebets:
+    channel_id: "-1003051607294"
+    description: "Surebet Valuebets - Main channel"
+    filters:
+      - min_value: 5.0
+      - bookmakers: ["pinnacle", "bet365"]
+
+  filtro_1:
+    channel_id: "-1002915431056"
+    description: "Surebet Valuebets - Main channel"
+    filters:
+      - min_value: 5.0
+      - bookmakers: ["pinnacle", "bet365"]
+
+  filtro_2:
+    channel_id: "-1003072894250"
+    description: "Surebet Valuebets - Main channel"
+    filters:
+      - min_value: 5.0
+      - bookmakers: ["pinnacle", "bet365"]
+
+  filtro_6:
+    channel_id: "-1003073937037"
     description: "Surebet Valuebets - Main channel"
     filters:
       - min_value: 5.0
@@ -51,5 +68,5 @@ surebet_profiles:
 # Support channels
 support:
   technical_alerts:
-    channel_id: "-1002937519273"
+    channel_id: "-1002922469529"
     description: "Technical errors and reconnection alerts"

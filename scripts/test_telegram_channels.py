@@ -9,11 +9,12 @@ Test Telegram delivery to all channels defined in configuration.
 
 Usage:
   python3 scripts/test_telegram_channels.py
+  python3 scripts/test_telegram_channels.py --only betburger    # only betburger profiles
+  python3 scripts/test_telegram_channels.py --dry-run           # list without sending
 
 Notes:
-- This script uses python-telegram-bot v22+ (async API)
 - Ensure the bot is added to each channel with permission to send messages
-- Channel IDs should be strings, usually negative for channels (e.g., -100XXXXXXXXXX)
+- Channel IDs should be strings; for public channels, @username also works
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ import asyncio
 import datetime as dt
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterable
 
 import yaml
 from dotenv import load_dotenv
@@ -81,6 +82,28 @@ def load_channels() -> List[Tuple[str, str]]:
     return pairs
 
 
+def _filter_pairs(pairs: Iterable[Tuple[str, str]], only: str | None) -> List[Tuple[str, str]]:
+    """Filter by top-level group and deduplicate by (name, id).
+
+    Args:
+        pairs: iterable of (name, id) like "betburger.profile_1"
+        only: optional filter: "betburger", "surebet", or "support"
+    """
+    filtered: List[Tuple[str, str]] = []
+    seen: set[Tuple[str, str]] = set()
+    for name, cid in pairs:
+        if only and not name.startswith(f"{only}."):
+            continue
+        key = (name, cid)
+        if key in seen:
+            continue
+        seen.add(key)
+        filtered.append((name, cid))
+    # Sort for stable output
+    filtered.sort(key=lambda x: x[0])
+    return filtered
+
+
 async def ping_channel(bot: Bot, name: str, channel_id: str) -> Tuple[str, str, str]:
     """Send a ping message to a single channel.
 
@@ -102,23 +125,34 @@ async def ping_channel(bot: Bot, name: str, channel_id: str) -> Tuple[str, str, 
 
 async def main_async() -> int:
     load_env()
+    import argparse
+    parser = argparse.ArgumentParser(description="Test Telegram delivery to configured channels")
+    parser.add_argument("--only", choices=["betburger", "surebet", "support"], help="Filter channel group")
+    parser.add_argument("--dry-run", action="store_true", help="List channels without sending messages")
+    args = parser.parse_args()
+
+    # If not dry-run, we require the token
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    if not token:
+    if not args.dry_run and not token:
         print("ERROR: TELEGRAM_BOT_TOKEN not set in .env", file=sys.stderr)
         return 2
 
-    channels = load_channels()
+    channels = _filter_pairs(load_channels(), args.only)
     if not channels:
         print(f"WARN: No channels found in {_pick_config_path()}")
         return 0
 
-    bot = Bot(token=token)
+    bot = Bot(token=token) if not args.dry_run else None  # type: ignore[assignment]
 
     print("Testing Telegram delivery to the following channels:")
     for name, cid in channels:
         print(f" - {name}: {cid}")
 
-    tasks = [ping_channel(bot, name, cid) for name, cid in channels]
+    if args.dry_run:
+        print("\nDry run: no messages sent.")
+        return 0
+
+    tasks = [ping_channel(bot, name, cid) for name, cid in channels]  # type: ignore[arg-type]
     results = await asyncio.gather(*tasks)
 
     print("\nResults:")
