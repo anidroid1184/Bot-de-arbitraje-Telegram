@@ -1,24 +1,25 @@
 """
-Simple Telegram notifier using python-telegram-bot.
+Simple Telegram notifier.
+
+This implementation uses direct HTTP requests to the Telegram Bot API to avoid
+asyncio event loop coupling issues observed with python-telegram-bot in
+short-lived scripts ("Event loop is closed").
+
 Reads TELEGRAM_BOT_TOKEN and TELEGRAM_SUPPORT_CHANNEL_ID from env.
 If configuration is missing, it logs and no-ops.
 """
 from __future__ import annotations
 
 import os
-import asyncio
+import time
 from typing import Optional
 from dataclasses import dataclass
+
+import requests
 
 from .logger import get_module_logger
 
 logger = get_module_logger("telegram_notifier")
-
-try:
-    # Lazy import to avoid hard dependency at module import time
-    from telegram import Bot
-except Exception:  # pragma: no cover
-    Bot = None  # type: ignore
 
 
 @dataclass
@@ -43,18 +44,14 @@ class TelegramNotifier:
             chat_id = config.default_chat_id or chat_id
         self.token = token
         self.default_chat_id = chat_id
-        self._bot = None
+        # rate limiting between messages (seconds). Helps reduce flood control.
+        try:
+            self.min_interval = float(os.getenv("TELEGRAM_MIN_INTERVAL_SEC", "0.20"))
+        except Exception:
+            self.min_interval = 0.20
+        self._last_sent_ts = 0.0
         if not token:
             logger.warning("TELEGRAM_BOT_TOKEN missing; notifier will no-op")
-        else:
-            if Bot is None:
-                logger.warning("python-telegram-bot not available; notifier will no-op")
-            else:
-                try:
-                    self._bot = Bot(token=token)
-                except Exception as e:
-                    logger.error("Failed to initialize Telegram Bot", error=str(e))
-                    self._bot = None
 
     @staticmethod
     def _load_support_channel_from_yaml() -> Optional[str]:
@@ -90,34 +87,109 @@ class TelegramNotifier:
         return None
 
     def send_text(self, text: str, chat_id: Optional[str] = None) -> bool:
-        if not self._bot or not self.token:
+        """Send a Telegram message synchronously via HTTP API.
+
+        Handles flood control (HTTP 429) with retry-after, simple backoff for
+        transient errors, and minimal pacing between messages.
+        """
+        if not self.token:
             return False
         target = chat_id or self.default_chat_id
         if not target:
             logger.warning("No chat_id provided and TELEGRAM_SUPPORT_CHANNEL_ID is missing")
             return False
-        
-        async def _async_send() -> None:
-            await self._bot.send_message(chat_id=target, text=text, disable_web_page_preview=True)
 
-        try:
-            # Always run synchronously to avoid orphaned tasks in short-lived scripts
-            # If already inside an event loop, create a new loop to run the task safely.
-            try:
-                asyncio.get_running_loop()
-                # We're inside an existing loop; run in a dedicated new loop
-                new_loop = asyncio.new_event_loop()
+        def _pace():
+            now = time.time()
+            delta = now - self._last_sent_ts
+            if delta < self.min_interval:
+                time.sleep(self.min_interval - delta)
+
+        def _post_message(body_text: str) -> bool:
+            _pace()
+            url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+            payload = {
+                "chat_id": str(target),
+                "text": body_text,
+                "disable_web_page_preview": True,
+            }
+
+            max_attempts = 4  # ensures at least 2 retries after first attempt
+            attempt = 0
+            while attempt < max_attempts:
+                attempt += 1
                 try:
-                    asyncio.set_event_loop(new_loop)
-                    new_loop.run_until_complete(_async_send())
-                finally:
-                    new_loop.close()
-                    asyncio.set_event_loop(None)
-            except RuntimeError:
-                # No running loop; safe to use asyncio.run
-                asyncio.run(_async_send())
-            logger.info("Sent Telegram message", length=len(text))
-            return True
-        except Exception as e:
-            logger.error("Failed to send Telegram message", error=str(e))
+                    resp = requests.post(url, json=payload, timeout=15)
+                except Exception as e:
+                    logger.error("Telegram POST failed", error=str(e))
+                    time.sleep(1.0)
+                    continue
+
+                if resp.status_code == 200:
+                    self._last_sent_ts = time.time()
+                    logger.info("Sent Telegram message", length=len(body_text))
+                    return True
+
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {}
+
+                if resp.status_code == 429:
+                    retry_after = 1
+                    try:
+                        retry_after = int((data.get("parameters") or {}).get("retry_after", 1))
+                    except Exception:
+                        pass
+                    logger.error("Flood control: retrying later", retry_after=retry_after)
+                    time.sleep(retry_after + 1)
+                    continue
+
+                if resp.status_code == 400 and isinstance(data, dict) and (
+                    str(data.get("description", "")).lower().find("too long") >= 0
+                ):
+                    # message too long: caller will handle chunking
+                    return False
+
+                if resp.status_code >= 500:
+                    logger.error("Telegram server error", status=resp.status_code)
+                    time.sleep(1.5)
+                    continue
+
+                logger.error("Failed to send Telegram message", status=resp.status_code, response=data)
+                return False
+
             return False
+
+        # Try first send; if message too long, split into chunks and send sequentially
+        ok = _post_message(text)
+        if ok:
+            return True
+
+        # Heuristic: if single send failed due to size, chunk by newline respecting 4096 limit
+        max_len = 4000  # leave headroom for formatting
+        parts: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for line in text.split("\n"):
+            line_len = len(line) + 1  # account for newline
+            if current_len + line_len > max_len and current:
+                parts.append("\n".join(current))
+                current = [line]
+                current_len = len(line)
+            else:
+                current.append(line)
+                current_len += line_len
+        if current:
+            parts.append("\n".join(current))
+
+        if len(parts) <= 1:
+            # Nothing to chunk or still failing
+            return False
+
+        total = len(parts)
+        for idx, part in enumerate(parts, start=1):
+            header = f"[parte {idx}/{total}]\n"
+            if not _post_message(header + part):
+                return False
+        return True
