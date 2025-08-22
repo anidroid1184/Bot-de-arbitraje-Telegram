@@ -7,8 +7,10 @@ src.formatters.telegram_message.format_alert_telegram.
 Unified schema keys (subset):
 - source: str ("surebet")
 - profile: str
+- timestamp_utc: str (ISO UTC when parsed)
 - value_pct: float | None
 - sport: str | None
+- league: str | None
 - market: str | None
 - match: str | None
 - selection_a: { bookmaker: str, odd: str }
@@ -18,8 +20,13 @@ Unified schema keys (subset):
 from __future__ import annotations
 
 from typing import Any, Dict, List
+import datetime as dt
 
 from src.scrapers.surebet import parse_valuebets_html
+
+
+def _now_iso_utc() -> str:
+    return dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
 def _norm_item(item: Dict[str, Any], profile: str) -> Dict[str, Any]:
@@ -33,8 +40,10 @@ def _norm_item(item: Dict[str, Any], profile: str) -> Dict[str, Any]:
     norm: Dict[str, Any] = {
         "source": "surebet",
         "profile": profile,
+        "timestamp_utc": _now_iso_utc(),
         "value_pct": item.get("value_percent"),
         "sport": item.get("sport"),
+        "league": item.get("league"),
         "market": item.get("market"),
         "match": item.get("event"),
         "selection_a": selection_a,

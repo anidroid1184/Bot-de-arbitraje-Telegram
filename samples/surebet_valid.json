@@ -1,0 +1,12 @@
+{
+  "source": "surebet",
+  "profile": "ev-surebets",
+  "timestamp_utc": "2025-08-21T18:28:52Z",
+  "sport": "football",
+  "league": "La Liga",
+  "match": "Team A vs Team B",
+  "market": "1X2",
+  "selection_a": { "bookmaker": "bet365", "odd": 2.10 },
+  "value_pct": 6.5,
+  "target_link": "https://example.com"
+}
