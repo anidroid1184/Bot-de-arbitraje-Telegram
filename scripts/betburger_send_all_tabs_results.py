@@ -34,6 +34,10 @@ from src.utils.logger import get_module_logger  # type: ignore
 from src.config.settings import ConfigManager  # type: ignore
 from src.browser.tab_manager import TabManager  # type: ignore
 from src.utils.telegram_notifier import TelegramNotifier  # type: ignore
+from scripts.smoke_betburger_arbs_tabs import (
+    login_with_remember_me,
+    duplicate_tabs_to,
+)  # type: ignore
 
 logger = get_module_logger("betburger_send_all_tabs_results")
 
@@ -123,37 +127,34 @@ def _format_summary(items: List[dict], tab_num: int, profile_key: str) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
-    cfg = ConfigManager()
-    tm = TabManager(cfg.bot)
+def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
+    """Send summaries for all Betburger tabs using an existing Selenium driver.
 
-    if not tm.connect_to_existing_browser():
-        logger.error("Unable to connect to existing Firefox session")
-        return 2
-
+    Returns 0 on success (>=1 tab sent), 1 otherwise.
+    """
     try:
-        handles = tm.driver.window_handles
+        handles = driver.window_handles
         if not handles:
             logger.error("No browser tabs available")
-            return 2
+            return 1
 
         total_tabs = int(os.getenv("BETBURGER_TABS", "6"))
         actual_tabs = min(total_tabs, len(handles))
-        
+
         notifier = TelegramNotifier()
         success_count = 0
 
         for i in range(actual_tabs):
             tab_num = i + 1
             logger.info(f"Processing tab {tab_num}/{actual_tabs}")
-            
+
             try:
-                tm.driver.switch_to.window(handles[i])
+                driver.switch_to.window(handles[i])
                 time.sleep(0.5)
-                
+
                 # Ensure we're on /es/arbs
-                if "/es/arbs" not in (tm.driver.current_url or ""):
-                    tm.driver.get("https://www.betburger.com/es/arbs")
+                if "/es/arbs" not in (driver.current_url or ""):
+                    driver.get("https://www.betburger.com/es/arbs")
                     time.sleep(1.0)
 
                 # Get profile and channel for this tab
@@ -170,25 +171,72 @@ def main() -> int:
 
                 # Extract and send results
                 time.sleep(1.0)  # Allow content to render
-                html = tm.driver.page_source or ""
+                html = driver.page_source or ""
                 items = _extract_rows(html, max_items=5)
                 text = _format_summary(items, tab_num, profile_key)
 
                 ok = notifier.send_text(text, chat_id=target)
-                logger.info(f"Tab {tab_num} summary sent", ok=ok, target=target, items=len(items), profile=profile_key)
-                
+                logger.info(
+                    f"Tab {tab_num} summary sent", ok=ok, target=target, items=len(items), profile=profile_key
+                )
+
                 if ok:
                     success_count += 1
-                    
+
                 time.sleep(0.5)  # Brief pause between tabs
-                
+
             except Exception as e:
                 logger.error(f"Error processing tab {tab_num}", error=str(e))
                 continue
 
         logger.info(f"Completed processing all tabs", success=success_count, total=actual_tabs)
         return 0 if success_count > 0 else 1
-        
+
+    except Exception as outer:
+        logger.error("Unhandled error in send_all_tabs_with_driver", error=str(outer))
+        return 1
+
+
+def _prepare_tabs_if_needed(tm: TabManager, cfg: ConfigManager, desired_tabs: int) -> None:
+    """Ensure we are logged in and have at least desired_tabs open on /es/arbs."""
+    try:
+        handles = tm.driver.window_handles
+        if len(handles) >= desired_tabs:
+            return
+
+        # Try to ensure login and reach /es/arbs
+        username = cfg.betburger.username
+        password = cfg.betburger.password
+        login_url = cfg.betburger.login_url
+        if username and password:
+            try:
+                login_with_remember_me(tm.driver, username, password, login_url, timeout=cfg.bot.browser_timeout)
+            except Exception as e:
+                logger.warning("Login attempt failed; will try to navigate directly", error=str(e))
+
+        # Navigate to arbs page
+        tm.driver.get("https://www.betburger.com/es/arbs")
+        time.sleep(1.0)
+
+        # Duplicate to desired count
+        duplicate_tabs_to(tm.driver, desired_tabs)
+        logger.info("Tabs ensured", count=len(tm.driver.window_handles))
+    except Exception as e:
+        logger.warning("Could not prepare tabs automatically", error=str(e))
+
+
+def main() -> int:
+    cfg = ConfigManager()
+    tm = TabManager(cfg.bot)
+
+    if not tm.connect_to_existing_browser():
+        logger.error("Unable to connect to existing Firefox session")
+        return 2
+
+    try:
+        desired = int(os.getenv("BETBURGER_TABS", "6"))
+        _prepare_tabs_if_needed(tm, cfg, desired)
+        return send_all_tabs_with_driver(tm.driver, cfg)
     finally:
         pass
 

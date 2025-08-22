@@ -101,12 +101,20 @@ class TelegramNotifier:
             await self._bot.send_message(chat_id=target, text=text, disable_web_page_preview=True)
 
         try:
+            # Always run synchronously to avoid orphaned tasks in short-lived scripts
+            # If already inside an event loop, create a new loop to run the task safely.
             try:
-                loop = asyncio.get_running_loop()
-                # If we're already in an event loop, schedule the task and do not block
-                loop.create_task(_async_send())
+                asyncio.get_running_loop()
+                # We're inside an existing loop; run in a dedicated new loop
+                new_loop = asyncio.new_event_loop()
+                try:
+                    asyncio.set_event_loop(new_loop)
+                    new_loop.run_until_complete(_async_send())
+                finally:
+                    new_loop.close()
+                    asyncio.set_event_loop(None)
             except RuntimeError:
-                # No running loop; run synchronously
+                # No running loop; safe to use asyncio.run
                 asyncio.run(_async_send())
             logger.info("Sent Telegram message", length=len(text))
             return True

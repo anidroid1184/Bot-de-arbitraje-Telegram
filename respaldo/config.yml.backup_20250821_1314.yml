@@ -1,7 +1,3 @@
-# Backup of src/config/config.yml at 2025-08-21 13:14:00-05:00
-# Do not edit. Used to restore previous configuration if needed.
-# Original path: Bot-de-arbitraje-Telegram/src/config/config.yml
-# ---- BEGIN ORIGINAL CONTENT ----
 # Mapping of filters to Telegram channels
 # Each profile/filter gets its own channel
 
@@ -25,7 +21,7 @@ betburger_profiles:
     required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
   
   winamax-valuebets:
-    channel_id: "-1002868073429" 
+    channel_id: "-1002868073429"
     description: "Betburger Profile 2 - Basketball alerts"
     platform: betburger
     type: valuebets
@@ -65,9 +61,17 @@ betburger_profiles:
       - bookmakers: ["winamax", "bet365"]
     required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
 
+  filtro_6:
+    channel_id: "-1003073937037"
+    description: "Betburger Profile 6 - Custom filter"
+    platform: betburger
+    type: valuebets
+    filters:
+      - min_roi: 3.0
+    required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
+
 
 surebet_profiles:
-
   ev-surebets:
     channel_id: "-1003051607294"
     description: "Surebet Valuebets - Main channel"
@@ -80,7 +84,7 @@ surebet_profiles:
 
   filtro_1:
     channel_id: "-1002915431056"
-    description: "Surebet Valuebets - Main channel"
+    description: "Surebet Filtro 1"
     platform: surebet
     type: valuebets
     filters:
@@ -90,17 +94,7 @@ surebet_profiles:
 
   filtro_2:
     channel_id: "-1003072894250"
-    description: "Surebet Valuebets - Main channel"
-    platform: surebet
-    type: valuebets
-    filters:
-      - min_value: 5.0
-      - bookmakers: ["pinnacle", "bet365"]
-    required_fields: ["event", "league", "start_time", "bookmaker", "odds", "value"]
-
-  filtro_6:
-    channel_id: "-1003073937037"
-    description: "Surebet Valuebets - Main channel"
+    description: "Surebet Filtro 2"
     platform: surebet
     type: valuebets
     filters:
@@ -113,4 +107,3 @@ support:
   technical_alerts:
     channel_id: "-1002922469529"
     description: "Technical errors and reconnection alerts"
-# ---- END ORIGINAL CONTENT ----

@@ -48,3 +48,7 @@ config/channels.local.yaml
 *.tar.bz2
 *.tar.xz
 *.zip
+
+# respaldos
+respaldo/
+config.yml
