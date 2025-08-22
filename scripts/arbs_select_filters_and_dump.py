@@ -43,8 +43,14 @@ def ensure_dir(p: Path) -> None:
 
 def save_artifacts(driver, out_dir: Path, name: str) -> None:
     ts = time.strftime("%Y%m%d_%H%M%S")
-    html_path = out_dir / f"{name}_{ts}.html"
-    png_path = out_dir / f"{name}_{ts}.png"
+    # HTML goes to raw_html, PNG goes to snapshots
+    html_dir = Path.cwd() / "logs" / "raw_html"
+    png_dir = Path.cwd() / "logs" / "snapshots"
+    ensure_dir(html_dir)
+    ensure_dir(png_dir)
+    
+    html_path = html_dir / f"{name}_{ts}.html"
+    png_path = png_dir / f"{name}_{ts}.png"
     try:
         html_path.write_text(driver.page_source or "", encoding="utf-8")
     except Exception:
@@ -72,10 +78,10 @@ def main() -> int:
         channels_cfg = getattr(cfg, "channels", {}) or {}
         yaml_map = channels_cfg.get("betburger_tab_filters", [])
 
-        total_env = int(os.environ.get("BETBURGER_TABS", str(len(handles)) or "6"))
+        total_env = int(os.environ.get("BETBURGER_TABS", "6"))
         total_yaml = len(yaml_map) if isinstance(yaml_map, list) else (len(yaml_map) if isinstance(yaml_map, dict) else 0)
         total = min(max(total_env, total_yaml, 1), len(handles))
-        logger.info("Processing tabs", total=total)
+        logger.info("Processing tabs", total=total, available_handles=len(handles))
 
         out = Path.cwd() / "logs" / "raw_html"
         ensure_dir(out)
@@ -130,21 +136,41 @@ def main() -> int:
                 )
                 time.sleep(0.8)
 
-                # Notify channel if configured and selection succeeded
-                if ok and send_alerts:
+                # Notify channel regardless of success/failure
+                if send_alerts:
                     # Prefer resolved channel_id for the profile; fallback to support channel
                     target_chat = channel_id or cfg.get_support_channel()
                     if target_chat:
-                        msg = (
-                            f"✅ Betburger: filtro abierto en pestaña {i+1}\n"
-                            f"Perfil: {profile_key or 'N/A'}\n"
-                            f"Filtro: {filter_name}"
-                        )
+                        if ok:
+                            msg = (
+                                f"✅ Betburger: filtro abierto en pestaña {i+1}\n"
+                                f"Perfil: {profile_key or 'N/A'}\n"
+                                f"Filtro: {filter_name}"
+                            )
+                        else:
+                            msg = (
+                                f"❌ Betburger: error en pestaña {i+1}\n"
+                                f"Perfil: {profile_key or 'N/A'}\n"
+                                f"Filtro no encontrado: {filter_name}\n"
+                                f"Revisa el nombre exacto en la UI"
+                            )
                         notifier.send_text(msg, chat_id=target_chat)
 
             # Dump artifacts for inspection
             safe = filter_name.replace("/", "-") if filter_name else f"tab{i+1}"
             save_artifacts(tm.driver, out, f"betburger_arbs_tab{i+1}_{safe}")
+            
+            # Send capture success message if alerts enabled
+            if send_alerts:
+                target_chat = channel_id or cfg.get_support_channel()
+                if target_chat:
+                    capture_msg = (
+                        f"📸 Betburger: captura guardada - pestaña {i+1}\n"
+                        f"Perfil: {profile_key or 'N/A'}\n"
+                        f"HTML: logs/raw_html/\n"
+                        f"PNG: logs/snapshots/"
+                    )
+                    notifier.send_text(capture_msg, chat_id=target_chat)
 
         logger.info("Done selecting filters and dumping artifacts")
         return 0

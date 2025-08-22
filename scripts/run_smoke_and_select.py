@@ -47,7 +47,8 @@ def main() -> int:
         logger.error("Select step finished with non-zero code", return_code=rc2)
         return rc2 if isinstance(rc2, int) else 1
 
-    logger.info("All steps completed successfully")
+    logger.info("All steps completed successfully - browser session kept alive")
+    logger.info("You can now run: python3 -m scripts.betburger_send_first_tab_results")
     return 0
 
 

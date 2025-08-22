@@ -128,10 +128,12 @@ class ConfigManager:
         src_dir = os.path.dirname(__file__)
         project_root = os.path.abspath(os.path.join(src_dir, os.pardir))
         preferred = os.path.join(src_dir, "config.yml")
+        # Secondary preferred path: project root config.yml (repo_root/config.yml)
+        root_config = os.path.join(project_root, "config.yml")
         # Backward-compatible fallback: repo_root/config/channels.yaml
         fallback = os.path.join(project_root, self.config_dir, "channels.yaml")
 
-        for path in (preferred, fallback):
+        for path in (preferred, root_config, fallback):
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     data = yaml.safe_load(f)

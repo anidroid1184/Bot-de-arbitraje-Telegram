@@ -1,0 +1,109 @@
+# Mapping of filters to Telegram channels
+# Each profile/filter gets its own channel
+
+# Global defaults and notification routing
+defaults:
+  notifications:
+    error_channel: "-1002922469529"  # support.technical_alerts
+  message_policy:
+    preserve_hours: 24  # client requests 12-24h visibility (future use)
+
+betburger_profiles:
+  bet365_valuebets:
+    channel_id: "-1002993087103"
+    description: "Betburger Profile 1 - High ROI alerts"
+    platform: betburger
+    type: valuebets
+    filters:
+      - min_roi: 5.0
+      - sports: ["football", "tennis"]
+      - bookmakers: ["bet365"]
+    required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
+  
+  winamax-valuebets:
+    channel_id: "-1002868073429"
+    description: "Betburger Profile 2 - Basketball alerts"
+    platform: betburger
+    type: valuebets
+    filters:
+      - min_roi: 3.0
+      - sports: ["basketball"]
+      - bookmakers: ["winamax"]
+    required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
+  
+  codere_valuebets:
+    channel_id: "-1003085949789"
+    description: "Betburger Profile 3 - All sports low ROI"
+    platform: betburger
+    type: valuebets
+    filters:
+      - min_roi: 2.0
+      - bookmakers: ["codere"]
+    required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
+
+  retabet_valuebets:
+    channel_id: "-1002972972758"
+    description: "Betburger Profile 4 - High stakes"
+    platform: betburger
+    type: valuebets
+    filters:
+      - min_roi: 4.0
+      - bookmakers: ["retabet"]
+    required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
+
+  winamax-bet365:
+    channel_id: "-1003088121672"
+    description: "Betburger Profile 5 - Quick bets"
+    platform: betburger
+    type: valuebets
+    filters:
+      - min_roi: 3.5
+      - bookmakers: ["winamax", "bet365"]
+    required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
+
+  filtro_6:
+    channel_id: "-1003073937037"
+    description: "Betburger Profile 6 - Custom filter"
+    platform: betburger
+    type: valuebets
+    filters:
+      - min_roi: 3.0
+    required_fields: ["event", "league", "start_time", "market", "selection", "odds", "roi"]
+
+
+surebet_profiles:
+  ev-surebets:
+    channel_id: "-1003051607294"
+    description: "Surebet Valuebets - Main channel"
+    platform: surebet
+    type: valuebets
+    filters:
+      - min_value: 5.0
+      - bookmakers: ["pinnacle", "bet365"]
+    required_fields: ["event", "league", "start_time", "bookmaker", "odds", "value"]
+
+  filtro_1:
+    channel_id: "-1002915431056"
+    description: "Surebet Filtro 1"
+    platform: surebet
+    type: valuebets
+    filters:
+      - min_value: 5.0
+      - bookmakers: ["pinnacle", "bet365"]
+    required_fields: ["event", "league", "start_time", "bookmaker", "odds", "value"]
+
+  filtro_2:
+    channel_id: "-1003072894250"
+    description: "Surebet Filtro 2"
+    platform: surebet
+    type: valuebets
+    filters:
+      - min_value: 5.0
+      - bookmakers: ["pinnacle", "bet365"]
+    required_fields: ["event", "league", "start_time", "bookmaker", "odds", "value"]
+
+# Support channels
+support:
+  technical_alerts:
+    channel_id: "-1002922469529"
+    description: "Technical errors and reconnection alerts"
