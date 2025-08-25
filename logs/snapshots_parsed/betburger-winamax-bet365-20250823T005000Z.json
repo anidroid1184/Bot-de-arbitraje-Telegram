@@ -1,0 +1,17 @@
+{
+  "source": "betburger",
+  "profile": "winamax-bet365",
+  "timestamp_utc": "2025-08-23T00:50:00Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": null,
+    "odd": 1.5
+  },
+  "selection_b": {
+    "bookmaker": null,
+    "odd": 2.02
+  },
+  "roi_pct": 1.0
+}

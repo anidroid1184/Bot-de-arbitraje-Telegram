@@ -13,7 +13,6 @@ __pycache__/
 .venv/
 
 # Logs & reports
-logs/
 reports/
 coverage/
 *.log

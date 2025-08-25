@@ -1,0 +1,17 @@
+{
+  "source": "betburger",
+  "profile": "filtro_6",
+  "timestamp_utc": "2025-08-25T12:51:01Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": "Esto",
+    "odd": 1.0
+  },
+  "selection_b": {
+    "bookmaker": "Hora Pamestoixima 27 Ago 05",
+    "odd": 30.0
+  },
+  "roi_pct": 1.0
+}

@@ -1,0 +1,17 @@
+{
+  "source": "betburger",
+  "profile": "bet365_valuebets",
+  "timestamp_utc": "2025-08-25T12:46:06Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": null,
+    "odd": 13.5
+  },
+  "selection_b": {
+    "bookmaker": null,
+    "odd": 2.02
+  },
+  "roi_pct": 1.0
+}

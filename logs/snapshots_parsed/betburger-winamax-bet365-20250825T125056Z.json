@@ -1,0 +1,17 @@
+{
+  "source": "betburger",
+  "profile": "winamax-bet365",
+  "timestamp_utc": "2025-08-25T12:50:56Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": "Tbol 9 Minutos Vbet 26 Ago 16",
+    "odd": 30.0
+  },
+  "selection_b": {
+    "bookmaker": "Encarnacion Fc - Club",
+    "odd": 2.0
+  },
+  "roi_pct": 1.0
+}

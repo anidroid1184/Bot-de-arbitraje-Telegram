@@ -1,0 +1,17 @@
+{
+  "source": "betburger",
+  "profile": "retabet_valuebets",
+  "timestamp_utc": "2025-08-25T13:01:20Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": "St Vienna Fc",
+    "odd": 1894.0
+  },
+  "selection_b": {
+    "bookmaker": "Aut. Austrian Cup Ah1",
+    "odd": 0.0
+  },
+  "roi_pct": 1.0
+}

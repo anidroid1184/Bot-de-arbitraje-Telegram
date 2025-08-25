@@ -1,0 +1,17 @@
+{
+  "source": "betburger",
+  "profile": "winamax-valuebets",
+  "timestamp_utc": "2025-08-25T12:53:26Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": "Tbol 40 Minutos 1Xbet 25 Ago 09",
+    "odd": 0.0
+  },
+  "selection_b": {
+    "bookmaker": "England. National League North A",
+    "odd": 1.0
+  },
+  "roi_pct": 1.0
+}

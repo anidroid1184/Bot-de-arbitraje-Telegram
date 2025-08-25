@@ -40,6 +40,7 @@ from src.browser.auth_manager import AuthManager  # type: ignore
 from src.browser.surebet_nav import select_saved_filter  # type: ignore
 from src.processors.surebet_parser import parse_surebet_valuebets_html  # type: ignore
 from src.utils.telegram_notifier import TelegramNotifier  # type: ignore
+from src.utils.snapshots import write_snapshot, read_snapshot, compute_hash  # type: ignore
 
 logger = get_module_logger("run_surebet_select_and_send_all")
 
@@ -129,7 +130,7 @@ def main() -> int:
     tm = TabManager(cfg.bot)
     if not tm.connect_to_existing_browser():
         logger.error("Unable to start/connect to Firefox")
-        return 2
+        return 1
 
     notifier = TelegramNotifier()
     auth = AuthManager(cfg.bot)
@@ -147,55 +148,85 @@ def main() -> int:
         time.sleep(1.0)
 
         # 3) Duplicate tabs to N
-        tabs = _get_env_int("SUREBET_TABS", 3)
-        _duplicate_tabs_to(tm.driver, tabs)
+        target_tabs = _get_env_int("SUREBET_TABS", 3)
+        _duplicate_tabs_to(tm.driver, target_tabs)
         handles: List[str] = tm.driver.window_handles
 
-        # 4) Iterate tabs, optionally select filter, parse and send
-        for idx in range(tabs):
-            tab_no = idx + 1
-            profile_key = _get_profile_for_tab(tab_no)
-            if not profile_key:
-                logger.warning("Missing SUREBET_TAB_<i>_PROFILE_KEY; skipping tab", tab=tab_no)
-                # Still switch to keep tabs warm
-                tm.driver.switch_to.window(handles[idx])
-                continue
+        # Snapshot configuration
+        snapshot_enabled = (os.environ.get("SNAPSHOT_ENABLED", "false").lower() == "true")
+        snapshot_dir = Path(os.environ.get("SNAPSHOT_DIR", str(ROOT / "logs" / "html")))
+        run_forever = (os.environ.get("RUN_FOREVER", "false").lower() == "true")
+        interval_sec = _get_env_int("SNAPSHOT_INTERVAL_SEC", 60)
 
-            chat_id = cfg.get_channel_for_profile("surebet", profile_key)
-            if not chat_id:
-                logger.warning("No Telegram channel found for profile", profile=profile_key)
+        last_hash_by_profile: dict[str, str] = {}
 
-            tm.driver.switch_to.window(handles[idx])
-            logger.info("Processing Surebet tab", tab=tab_no, profile=profile_key)
+        def process_once() -> None:
+            for tab_no in range(1, target_tabs + 1):
+                profile_key = os.environ.get(f"SUREBET_TAB_{tab_no}_PROFILE_KEY")
+                if not profile_key:
+                    logger.warning("Missing profile for tab", tab=tab_no)
+                    continue
+                chat_id = cfg.get_channel_for_profile("surebet", profile_key)
 
-            # Optional filter selection by visible name
-            filter_name = _get_filter_for_tab(tab_no)
-            if filter_name:
-                try:
-                    ok = select_saved_filter(tm.driver, filter_name, timeout=cfg.bot.browser_timeout)
-                    if not ok:
-                        logger.warning("Filter selection failed", filter=filter_name, tab=tab_no)
-                        _send_info(notifier, f"[surebet] No se pudo aplicar el filtro '{filter_name}' (tab {tab_no}, perfil {profile_key}).", chat_id)
-                    else:
-                        time.sleep(0.5)  # small settle time after filter
-                except Exception as e:
-                    logger.warning("Exception selecting filter", error=str(e))
+                # Switch to tab and optionally select filter
+                tm.driver.switch_to.window(handles[tab_no - 1])
+                filter_name = os.environ.get(f"SUREBET_TAB_{tab_no}_FILTER_NAME")
+                logger.info("Processing Surebet tab", tab=tab_no, profile=profile_key)
 
-            # Snapshot and parse
-            html = tm.driver.page_source or ""
-            alerts = parse_surebet_valuebets_html(html, profile=profile_key)
+                if filter_name:
+                    try:
+                        select_saved_filter(tm.driver, filter_name)
+                    except Exception as e:
+                        logger.warning("Exception selecting filter", error=str(e))
 
-            if not alerts:
-                _send_info(notifier, f"[surebet] Sin eventos visibles (tab {tab_no}, perfil {profile_key}).", chat_id)
-                continue
+                # Capture current page source
+                html = tm.driver.page_source or ""
 
-            # Send a single concise summary per tab to avoid spam/flood
-            summary = _format_tab_summary(profile_key, tab_no, alerts, cfg.surebet.base_url, top_k=int(os.getenv("SUREBET_SUMMARY_TOP", "10")))
-            ok = notifier.send_text(summary, chat_id=chat_id)
-            logger.info("Tab completed", tab=tab_no, profile=profile_key, sent=int(bool(ok)), total=len(alerts))
+                # Optionally persist snapshot and read back from disk for parsing stability
+                if snapshot_enabled:
+                    try:
+                        path = write_snapshot(html, snapshot_dir, "surebet", profile_key)
+                        disk_html = read_snapshot(snapshot_dir, "surebet", profile_key) or html
+                        snap_hash = compute_hash(disk_html)
+                        # Dedup: if hash unchanged for this profile, skip sending
+                        if last_hash_by_profile.get(profile_key) == snap_hash:
+                            logger.info("No changes since last snapshot; skipping send", tab=tab_no, profile=profile_key)
+                            continue
+                        last_hash_by_profile[profile_key] = snap_hash
+                        html_to_parse = disk_html
+                    except Exception as e:
+                        logger.warning("Snapshot write/read failed; parsing from memory", error=str(e))
+                        html_to_parse = html
+                else:
+                    html_to_parse = html
 
-        logger.info("Surebet single-process flow completed")
-        return 0
+                # Parse alerts from chosen HTML
+                alerts = parse_surebet_valuebets_html(html_to_parse, profile=profile_key)
+
+                if not alerts:
+                    _send_info(notifier, f"[surebet] Sin eventos visibles (tab {tab_no}, perfil {profile_key}).", chat_id)
+                    continue
+
+                # Send a single concise summary per tab to avoid spam/flood
+                summary = _format_tab_summary(
+                    profile_key,
+                    tab_no,
+                    alerts,
+                    cfg.surebet.base_url,
+                    top_k=int(os.getenv("SUREBET_SUMMARY_TOP", "10")),
+                )
+                ok = notifier.send_text(summary, chat_id=chat_id)
+                logger.info("Tab completed", tab=tab_no, profile=profile_key, sent=int(bool(ok)), total=len(alerts))
+
+        if run_forever:
+            logger.info("Entering persistent loop", interval_sec=interval_sec)
+            while True:
+                process_once()
+                time.sleep(max(1, interval_sec))
+        else:
+            process_once()
+            logger.info("Surebet single-process flow completed")
+            return 0
 
     except Exception as e:
         logger.error("Surebet flow failed", error=str(e))

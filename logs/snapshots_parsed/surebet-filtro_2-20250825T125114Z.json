@@ -1,0 +1,17 @@
+{
+  "source": "surebet",
+  "profile": "filtro_2",
+  "timestamp_utc": "2025-08-25T12:51:14Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": null,
+    "odd": 19.5
+  },
+  "selection_b": {
+    "bookmaker": null,
+    "odd": 2.02
+  },
+  "value_pct": 1.0
+}

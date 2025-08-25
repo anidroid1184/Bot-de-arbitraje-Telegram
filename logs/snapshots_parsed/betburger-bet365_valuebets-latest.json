@@ -1,0 +1,17 @@
+{
+  "source": "betburger",
+  "profile": "bet365_valuebets",
+  "timestamp_utc": "2025-08-25T13:06:08Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": "Inutos 888Sport 25 Ago 11",
+    "odd": 0.0
+  },
+  "selection_b": {
+    "bookmaker": "Viimsi Mrjk Estonian Esiliiga A",
+    "odd": 2.0
+  },
+  "roi_pct": 1.0
+}

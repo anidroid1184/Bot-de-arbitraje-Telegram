@@ -3,3 +3,6 @@
 # Dev/test tools
 pytest==8.3.2
 pytest-asyncio==0.23.8
+
+# añadidas por mi
+pyyaml==6.0.2

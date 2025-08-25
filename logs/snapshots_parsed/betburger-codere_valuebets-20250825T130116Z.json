@@ -1,0 +1,17 @@
+{
+  "source": "betburger",
+  "profile": "codere_valuebets",
+  "timestamp_utc": "2025-08-25T13:01:16Z",
+  "sport": "football",
+  "market": "1X2",
+  "target_link": "/prices",
+  "selection_a": {
+    "bookmaker": "Minutos Betfair 26 Ago 12",
+    "odd": 30.0
+  },
+  "selection_b": {
+    "bookmaker": "Sku Amstetten - First Vienna Fc",
+    "odd": 1894.0
+  },
+  "roi_pct": 1.0
+}

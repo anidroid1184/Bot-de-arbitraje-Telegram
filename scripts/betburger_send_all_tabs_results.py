@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import time
+import json
 from pathlib import Path
 from typing import List
 
@@ -34,10 +35,12 @@ from src.utils.logger import get_module_logger  # type: ignore
 from src.config.settings import ConfigManager  # type: ignore
 from src.browser.tab_manager import TabManager  # type: ignore
 from src.utils.telegram_notifier import TelegramNotifier  # type: ignore
+from src.utils.snapshots import write_snapshot, read_snapshot, compute_hash  # type: ignore
 from scripts.smoke_betburger_arbs_tabs import (
     login_with_remember_me,
     duplicate_tabs_to,
 )  # type: ignore
+from scripts.process_snapshots import process_file as process_snapshot_file  # type: ignore
 
 logger = get_module_logger("betburger_send_all_tabs_results")
 
@@ -142,7 +145,11 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
         actual_tabs = min(total_tabs, len(handles))
 
         notifier = TelegramNotifier()
+        # Snapshot configuration (shared with Surebet):
+        snapshot_enabled = (os.environ.get("SNAPSHOT_ENABLED", "false").lower() == "true")
+        snapshot_dir = Path(os.environ.get("SNAPSHOT_DIR", str(ROOT / "logs" / "html")))
         success_count = 0
+        last_hash_by_profile: dict[str, str] = {}
 
         for i in range(actual_tabs):
             tab_num = i + 1
@@ -169,10 +176,80 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
                     logger.warning(f"No target channel for tab {tab_num} profile {profile_key}")
                     continue
 
-                # Extract and send results
+                # Extract and send results (and optionally save snapshot)
                 time.sleep(1.0)  # Allow content to render
                 html = driver.page_source or ""
-                items = _extract_rows(html, max_items=5)
+                html_to_parse = html
+                if snapshot_enabled:
+                    try:
+                        path = write_snapshot(html, snapshot_dir, "betburger", profile_key)
+                        disk_html = read_snapshot(snapshot_dir, "betburger", profile_key) or html
+                        snap_hash = compute_hash(disk_html)
+                        if last_hash_by_profile.get(profile_key) == snap_hash:
+                            logger.info("No changes since last snapshot; skipping send", tab=tab_num, profile=profile_key)
+                            continue
+                        last_hash_by_profile[profile_key] = snap_hash
+                        logger.info("Saved Betburger snapshot", file=str(path), tab=tab_num, profile=profile_key)
+
+                        # Process snapshot -> JSON latest
+                        try:
+                            process_snapshot_file(Path(path), source="betburger", profile=profile_key)
+                        except Exception as pe:
+                            logger.warning("Failed processing snapshot to JSON; will fallback to HTML parsing", error=str(pe))
+                        # Build message from latest JSON if available
+                        parsed_dir = Path(os.getenv("PARSED_OUTPUT_DIR", str(ROOT / "logs" / "snapshots_parsed")))
+                        latest = parsed_dir / f"betburger-{profile_key}-latest.json"
+                        if latest.exists():
+                            try:
+                                data = json.loads(latest.read_text(encoding="utf-8", errors="ignore"))
+                                sport = (data.get("sport") or "").title()
+                                match = data.get("match") or ""
+                                market = data.get("market") or ""
+                                roi = data.get("roi_pct")
+                                sel_a = data.get("selection_a") or {}
+                                sel_b = data.get("selection_b") or {}
+                                a_bk = sel_a.get("bookmaker") or "?"
+                                a_od = sel_a.get("odd") or "?"
+                                b_bk = sel_b.get("bookmaker") or "?"
+                                b_od = sel_b.get("odd") or "?"
+                                link = data.get("target_link")
+                                if isinstance(link, str) and link and not link.startswith(("http://", "https://")):
+                                    base = (cfg.betburger.base_url or "https://betburger.com").rstrip("/")
+                                    if link.startswith("/"):
+                                        link = base + link
+                                    else:
+                                        link = base + "/" + link
+                                lines = [f"📢 Betburger | Tab {tab_num} ({profile_key})"]
+                                head = f"{sport} • {market} — {match}".strip()
+                                if head:
+                                    lines.append(head)
+                                if isinstance(roi, (int, float)):
+                                    lines.append(f"ROI: {roi:.2f}%")
+                                odds_line = f"{a_bk}: {a_od}"
+                                if sel_b:
+                                    odds_line += f" | {b_bk}: {b_od}"
+                                lines.append(odds_line)
+                                if link:
+                                    lines.append(f"Link: {link}")
+                                text = "\n".join(lines)
+                                ok = notifier.send_text(text, chat_id=target)
+                                logger.info(
+                                    f"Tab {tab_num} JSON-based message sent", ok=ok, target=target, profile=profile_key
+                                )
+                                if ok:
+                                    success_count += 1
+                                time.sleep(0.5)
+                                continue  # Done with this tab
+                            except Exception as je:
+                                logger.warning("Failed to read/format latest JSON; fallback to HTML parsing", error=str(je))
+
+                        # If no latest JSON, fallback to parsing the disk_html
+                        html_to_parse = disk_html
+                    except Exception as e:
+                        logger.warning("Failed to save/read Betburger snapshot; parsing from memory", error=str(e), tab=tab_num, profile=profile_key)
+                        html_to_parse = html
+                # Fallback path (snapshots disabled or JSON not available): send summary from HTML
+                items = _extract_rows(html_to_parse, max_items=5)
                 text = _format_summary(items, tab_num, profile_key)
 
                 ok = notifier.send_text(text, chat_id=target)
