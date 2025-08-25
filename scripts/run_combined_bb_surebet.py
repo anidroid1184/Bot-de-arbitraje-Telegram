@@ -112,7 +112,7 @@ def main() -> int:
         return 2
 
     try:
-        # ========= Betburger phase =========
+        # ========= Betburger phase (one-time setup) =========
         username = cfg.betburger.username
         password = cfg.betburger.password
         login_url = cfg.betburger.login_url
@@ -146,12 +146,7 @@ def main() -> int:
         bb_duplicate_tabs_to(tm.driver, tabs_bb)
         logger.info("Betburger tabs ensured", count=len(tm.driver.window_handles))
 
-        rc = send_all_tabs_with_driver(tm.driver, cfg)
-        if rc != 0:
-            logger.error("Betburger send step finished with non-zero code", return_code=rc)
-            return rc
-
-        # ========= Surebet phase =========
+        # ========= Surebet phase (one-time setup) =========
         notifier = TelegramNotifier()
         auth = AuthManager(cfg.bot)
         if not auth.ensure_authenticated(tm.driver, "surebet", cfg.surebet):
@@ -164,7 +159,7 @@ def main() -> int:
         time.sleep(1.0)
 
         target_tabs = _get_env_int("SUREBET_TABS", 3)
-        # Ensure we have at least target_tabs by opening new ones of current url
+        # Ensure we have at least target_tabs by opening new ones of current url (only once)
         while len(tm.driver.window_handles) < target_tabs:
             tm.driver.execute_script("window.open(window.location.href, '_blank');")
             time.sleep(0.6)
@@ -176,106 +171,131 @@ def main() -> int:
         snapshot_dir = Path(os.environ.get("SNAPSHOT_DIR", str(ROOT / "logs" / "html")))
         last_hash_by_profile: dict[str, str] = {}
 
-        for tab_no in range(1, target_tabs + 1):
-            profile_key = os.environ.get(f"SUREBET_TAB_{tab_no}_PROFILE_KEY")
-            if not profile_key:
-                logger.warning("Missing profile for tab", tab=tab_no)
-                continue
-            chat_id = cfg.get_channel_for_profile("surebet", profile_key)
+        # ========= Main loop =========
+        run_forever = (os.environ.get("RUN_FOREVER", "false").lower() == "true")
+        poll_sec = _get_env_int("POLL_INTERVAL_SEC", 180)
+        iteration = 0
+        while True:
+            iteration += 1
+            # --- Betburger iteration ---
+            try:
+                rc = send_all_tabs_with_driver(tm.driver, cfg)
+                if rc != 0:
+                    logger.warning("Betburger send step returned non-zero", return_code=rc)
+            except Exception as e:
+                logger.warning("Betburger iteration failed", error=str(e))
 
-            tm.driver.switch_to.window(handles[tab_no - 1])
-            filter_name = os.environ.get(f"SUREBET_TAB_{tab_no}_FILTER_NAME")
-            logger.info("Processing Surebet tab", tab=tab_no, profile=profile_key)
+            # --- Surebet iteration ---
+            for tab_no in range(1, target_tabs + 1):
+                profile_key = os.environ.get(f"SUREBET_TAB_{tab_no}_PROFILE_KEY")
+                if not profile_key:
+                    logger.warning("Missing profile for tab", tab=tab_no)
+                    continue
+                chat_id = cfg.get_channel_for_profile("surebet", profile_key)
 
-            if filter_name:
-                try:
-                    select_saved_filter(tm.driver, filter_name)
-                except Exception as e:
-                    logger.warning("Exception selecting filter", error=str(e))
+                tm.driver.switch_to.window(handles[tab_no - 1])
+                filter_name = os.environ.get(f"SUREBET_TAB_{tab_no}_FILTER_NAME")
+                logger.info("Processing Surebet tab", tab=tab_no, profile=profile_key)
 
-            html = tm.driver.page_source or ""
-
-            if snapshot_enabled:
-                try:
-                    path = write_snapshot(html, snapshot_dir, "surebet", profile_key)
-                    disk_html = read_snapshot(snapshot_dir, "surebet", profile_key) or html
-                    snap_hash = compute_hash(disk_html)
-                    if last_hash_by_profile.get(profile_key) == snap_hash:
-                        logger.info("No changes since last snapshot; skipping send", tab=tab_no, profile=profile_key)
-                        continue
-                    last_hash_by_profile[profile_key] = snap_hash
-
-                    # Process snapshot to JSON latest
+                if filter_name:
                     try:
-                        process_snapshot_file(Path(path), source="surebet", profile=profile_key)
-                    except Exception as pe:
-                        logger.warning("Failed processing Surebet snapshot to JSON; will fallback to HTML parsing", error=str(pe))
+                        select_saved_filter(tm.driver, filter_name)
+                    except Exception as e:
+                        logger.warning("Exception selecting filter", error=str(e))
 
-                    parsed_dir = Path(os.getenv("PARSED_OUTPUT_DIR", str(ROOT / "logs" / "snapshots_parsed")))
-                    latest = parsed_dir / f"surebet-{profile_key}-latest.json"
-                    if latest.exists():
+                html = tm.driver.page_source or ""
+
+                if snapshot_enabled:
+                    try:
+                        path = write_snapshot(html, snapshot_dir, "surebet", profile_key)
+                        disk_html = read_snapshot(snapshot_dir, "surebet", profile_key) or html
+                        snap_hash = compute_hash(disk_html)
+                        if last_hash_by_profile.get(profile_key) == snap_hash:
+                            logger.info("No changes since last snapshot; skipping send", tab=tab_no, profile=profile_key)
+                            continue
+                        last_hash_by_profile[profile_key] = snap_hash
+
+                        # Process snapshot to JSON latest
                         try:
-                            data = json.loads(latest.read_text(encoding="utf-8", errors="ignore"))
-                            # Optional: send raw JSON message for visual supervision
-                            send_json = (os.environ.get("SEND_JSON_MESSAGE", "false").lower() == "true")
-                            if send_json:
-                                pretty = json.dumps(data, ensure_ascii=False, indent=2)
-                                msg = f"[surebet] Última alerta (perfil: {profile_key}, tab {tab_no})\n```json\n{pretty}\n```"
-                                notifier.send_text(msg, chat_id=chat_id)
-                                logger.info("Surebet JSON message sent", tab=tab_no, profile=profile_key)
-                                continue  # done with this tab
-                            sport = (data.get("sport") or "").title()
-                            market = data.get("market") or ""
-                            match = data.get("match") or ""
-                            value = data.get("value_pct")
-                            sel_a = data.get("selection_a") or {}
-                            a_bk = sel_a.get("bookmaker", "?")
-                            a_od = sel_a.get("odd", "?")
-                            link = _abs_url(cfg.surebet.base_url, data.get("target_link"))
-                            lines = [f"[surebet] Última alerta (perfil: {profile_key}, tab {tab_no})"]
-                            head = f"{sport} • {market} — {match}".strip()
-                            if head:
-                                lines.append(head)
-                            if isinstance(value, (int, float)):
-                                lines.append(f"VALUE: {value:.2f}%")
-                            lines.append(f"{a_bk}: {a_od}")
-                            if link:
-                                lines.append(f"Link: {link}")
-                            msg = "\n".join(lines)
-                            notifier.send_text(msg, chat_id=chat_id)
-                            logger.info("Surebet JSON-based message sent", tab=tab_no, profile=profile_key)
-                            continue  # done with this tab
-                        except Exception as je:
-                            logger.warning("Failed to read/format Surebet latest JSON; fallback to HTML parsing", error=str(je))
+                            process_snapshot_file(Path(path), source="surebet", profile=profile_key)
+                        except Exception as pe:
+                            logger.warning("Failed processing Surebet snapshot to JSON; will fallback to HTML parsing", error=str(pe))
 
-                    html_to_parse = disk_html
-                except Exception as e:
+                        parsed_dir = Path(os.getenv("PARSED_OUTPUT_DIR", str(ROOT / "logs" / "snapshots_parsed")))
+                        latest = parsed_dir / f"surebet-{profile_key}-latest.json"
+                        if latest.exists():
+                            try:
+                                data = json.loads(latest.read_text(encoding="utf-8", errors="ignore"))
+                                # Optional: send raw JSON message for visual supervision
+                                send_json = (os.environ.get("SEND_JSON_MESSAGE", "false").lower() == "true")
+                                if send_json:
+                                    pretty = json.dumps(data, ensure_ascii=False, indent=2)
+                                    msg = f"[surebet] Última alerta (perfil: {profile_key}, tab {tab_no})\n```json\n{pretty}\n```"
+                                    notifier.send_text(msg, chat_id=chat_id)
+                                    logger.info("Surebet JSON message sent", tab=tab_no, profile=profile_key)
+                                    continue  # done with this tab
+                                sport = (data.get("sport") or "").title()
+                                market = data.get("market") or ""
+                                match = data.get("match") or ""
+                                value = data.get("value_pct")
+                                sel_a = data.get("selection_a") or {}
+                                a_bk = sel_a.get("bookmaker", "?")
+                                a_od = sel_a.get("odd", "?")
+                                link = _abs_url(cfg.surebet.base_url, data.get("target_link"))
+                                lines = [f"[surebet] Última alerta (perfil: {profile_key}, tab {tab_no})"]
+                                head = f"{sport} • {market} — {match}".strip()
+                                if head:
+                                    lines.append(head)
+                                if isinstance(value, (int, float)):
+                                    lines.append(f"VALUE: {value:.2f}%")
+                                lines.append(f"{a_bk}: {a_od}")
+                                if link:
+                                    lines.append(f"Link: {link}")
+                                msg = "\n".join(lines)
+                                notifier.send_text(msg, chat_id=chat_id)
+                                logger.info("Surebet JSON-based message sent", tab=tab_no, profile=profile_key)
+                                continue  # done with this tab
+                            except Exception as je:
+                                logger.warning("Failed to read/format Surebet latest JSON; fallback to HTML parsing", error=str(je))
+
+                        html_to_parse = disk_html
+                    except Exception as e:
+                        logger.warning("Snapshot write/read failed; parsing from memory", error=str(e))
+                        html_to_parse = html
                     logger.warning("Snapshot write/read failed; parsing from memory", error=str(e))
                     html_to_parse = html
-            else:
-                html_to_parse = html
+                else:
+                    html_to_parse = html
 
             # Fallback path using existing parser and summary
-            alerts = parse_surebet_valuebets_html(html_to_parse, profile=profile_key)
-            if not alerts:
-                if chat_id:
-                    notifier.send_text(f"[surebet] Sin eventos visibles (tab {tab_no}, perfil {profile_key}).", chat_id=chat_id)
-                else:
-                    notifier.send_text(f"[surebet] Sin eventos visibles (tab {tab_no}, perfil {profile_key}).")
-                continue
+                alerts = parse_surebet_valuebets_html(html_to_parse, profile=profile_key)
+                if not alerts:
+                    if chat_id:
+                        notifier.send_text(f"[surebet] Sin eventos visibles (tab {tab_no}, perfil {profile_key}).", chat_id=chat_id)
+                    else:
+                        notifier.send_text(f"[surebet] Sin eventos visibles (tab {tab_no}, perfil {profile_key}).")
+                    continue
 
-            summary = _format_tab_summary(
-                profile_key,
-                tab_no,
-                alerts,
-                cfg.surebet.base_url,
-                top_k=int(os.getenv("SUREBET_SUMMARY_TOP", "10")),
-            )
-            notifier.send_text(summary, chat_id=chat_id)
-            logger.info("Surebet tab completed", tab=tab_no, profile=profile_key, total=len(alerts))
+                summary = _format_tab_summary(
+                    profile_key,
+                    tab_no,
+                    alerts,
+                    cfg.surebet.base_url,
+                    top_k=int(os.getenv("SUREBET_SUMMARY_TOP", "10")),
+                )
+                notifier.send_text(summary, chat_id=chat_id)
+                logger.info("Surebet tab completed", tab=tab_no, profile=profile_key, total=len(alerts))
 
-        logger.info("Combined flow completed successfully")
-        return 0
+            logger.info("Combined iteration completed", iteration=iteration)
+            if not run_forever:
+                logger.info("Single pass mode finished")
+                return 0
+            # Sleep until next poll
+            try:
+                time.sleep(max(5, poll_sec))
+            except KeyboardInterrupt:
+                logger.info("Interrupted by user")
+                return 0
 
     except Exception as e:
         logger.error("Combined workflow failed", error=str(e))

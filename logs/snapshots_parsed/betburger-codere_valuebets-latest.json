@@ -1,17 +1,17 @@
 {
   "source": "betburger",
   "profile": "codere_valuebets",
-  "timestamp_utc": "2025-08-25T13:06:16Z",
+  "timestamp_utc": "2025-08-25T13:39:28Z",
   "sport": "football",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Ago 09",
+    "bookmaker": "Tbol 23 Minutos Olimp 30 Ago 05",
     "odd": 0.0
   },
   "selection_b": {
-    "bookmaker": "England. National League North A",
-    "odd": 1.0
+    "bookmaker": "Obolon Ukraine. Premier League 2",
+    "odd": 6.11
   },
   "roi_pct": 1.0
 }
