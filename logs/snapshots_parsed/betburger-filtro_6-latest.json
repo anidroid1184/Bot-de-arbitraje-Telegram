@@ -1,18 +1,18 @@
 {
   "source": "betburger",
   "profile": "filtro_6",
-  "timestamp_utc": "2025-08-25T20:25:29Z",
+  "timestamp_utc": "2025-08-25T20:46:48Z",
   "sport": "football",
-  "match": "Alexei - Ruusu vs uori",
+  "match": "Esports. Counter vs Strike 2. BLAST Open. Closed Qualification. Best of 3 maps AH1",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Ago 11",
-    "odd": 10.0
+    "bookmaker": "Esports. Counter-Strike",
+    "odd": 2.0
   },
   "selection_b": {
-    "bookmaker": "Hard A",
-    "odd": 1.0
+    "bookmaker": "En. Closed Qualification. Best Of",
+    "odd": 3.0
   },
   "roi_pct": 1.0
 }

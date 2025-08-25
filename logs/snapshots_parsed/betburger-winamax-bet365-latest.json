@@ -1,18 +1,18 @@
 {
   "source": "betburger",
   "profile": "winamax-bet365",
-  "timestamp_utc": "2025-08-25T20:25:23Z",
+  "timestamp_utc": "2025-08-25T20:46:42Z",
   "sport": "football",
-  "match": "00 Mogi das Cruzes vs SL Mandic Basquete Brazil. Paulista TO",
+  "match": "Esports. Counter vs Strike 2. BLAST Open. Closed Qualification. Best of 3 maps AH1",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Match 25 Ago 18",
-    "odd": 0.0
+    "bookmaker": "Esports. Counter-Strike",
+    "odd": 2.0
   },
   "selection_b": {
-    "bookmaker": "Ndic Basquete Brazil. Paulista To",
-    "odd": 140.5
+    "bookmaker": "En. Closed Qualification. Best Of",
+    "odd": 3.0
   },
   "roi_pct": 1.0
 }

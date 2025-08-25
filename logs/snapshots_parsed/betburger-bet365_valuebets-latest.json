@@ -1,18 +1,18 @@
 {
   "source": "betburger",
   "profile": "bet365_valuebets",
-  "timestamp_utc": "2025-08-25T20:25:05Z",
+  "timestamp_utc": "2025-08-25T20:46:25Z",
   "sport": "football",
-  "match": "- Corners 1.86 vs bet 28 ago 14",
+  "match": "Esports. Counter vs Strike 2. BLAST Open. Closed Qualification. Best of 3 maps AH1",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Onference League Qualification To",
-    "odd": 9.5
+    "bookmaker": "Esports. Counter-Strike",
+    "odd": 2.0
   },
   "selection_b": {
-    "bookmaker": "Corners 1.86 Vbet 28 Ago 14",
-    "odd": 0.0
+    "bookmaker": "En. Closed Qualification. Best Of",
+    "odd": 3.0
   },
   "roi_pct": 1.0
 }

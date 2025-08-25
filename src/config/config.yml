@@ -9,6 +9,7 @@ defaults:
 betburger_profiles:
   bet365_valuebets:
     channel_id: "-1002993087103"
+    ui_filter_name: "Bet365 vs Pinnacle"
     description: "Betburger Profile 1 - High ROI alerts"
     platform: betburger
     type: valuebets
@@ -20,6 +21,7 @@ betburger_profiles:
 
   winamax-valuebets:
     channel_id: "-1002868073429"
+    ui_filter_name: "Winamax/Tonybet vs Pinnacle"
     description: "Betburger Profile 2 - Basketball alerts"
     platform: betburger
     type: valuebets
@@ -31,6 +33,7 @@ betburger_profiles:
 
   codere_valuebets:
     channel_id: "-1003085949789"
+    ui_filter_name: "Codere vs Pinnacle"
     description: "Betburger Profile 3 - All sports low ROI"
     platform: betburger
     type: valuebets
@@ -41,6 +44,7 @@ betburger_profiles:
 
   retabet_valuebets:
     channel_id: "-1002972972758"
+    ui_filter_name: "Betfair/Pokerstars vs Pinnacle"
     description: "Betburger Profile 4 - High stakes"
     platform: betburger
     type: valuebets
@@ -51,6 +55,7 @@ betburger_profiles:
 
   winamax-bet365:
     channel_id: "-1003088121672"
+    ui_filter_name: "Wina/Tony vs Bet365"
     description: "Betburger Profile 5 - Quick bets"
     platform: betburger
     type: valuebets
@@ -61,6 +66,7 @@ betburger_profiles:
 
   filtro_6:
     channel_id: "-1003073937037"
+    ui_filter_name: "Filtro 6"
     description: "Betburger Tabs - Filtro 6"
     platform: betburger
     type: valuebets
@@ -72,6 +78,7 @@ betburger_profiles:
 surebet_profiles:
   ev-surebets:
     channel_id: "-1003051607294"
+    ui_filter_name: "Filtro 3"
     description: "Surebet Valuebets - Main channel"
     platform: surebet
     type: valuebets
@@ -88,6 +95,7 @@ surebet_profiles:
 
   filtro_1:
     channel_id: "-1002915431056"
+    ui_filter_name: "Filtro 1"
     description: "Surebet Valuebets - Main channel"
     platform: surebet
     type: valuebets
@@ -104,6 +112,7 @@ surebet_profiles:
 
   filtro_2:
     channel_id: "-1003072894250"
+    ui_filter_name: "Filtro 2"
     description: "Surebet Valuebets - Main channel"
     platform: surebet
     type: valuebets

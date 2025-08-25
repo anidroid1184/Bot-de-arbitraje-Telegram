@@ -1,18 +1,18 @@
 {
   "source": "betburger",
   "profile": "codere_valuebets",
-  "timestamp_utc": "2025-08-25T20:25:14Z",
+  "timestamp_utc": "2025-08-25T20:46:32Z",
   "sport": "football",
-  "match": "Alexei - Ruusu vs uori",
+  "match": "encvarosi Europe. Champions League. Qualifying 2 vs Corners 3.05 Sportmarket 27 ago 11",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Ago 11",
-    "odd": 10.0
+    "bookmaker": "Ope. Champions League. Qualifying",
+    "odd": 2.0
   },
   "selection_b": {
-    "bookmaker": "Hard A",
-    "odd": 1.0
+    "bookmaker": "Corners 3.05 Sportmarket 27 Ago",
+    "odd": 11.0
   },
   "roi_pct": 1.0
 }

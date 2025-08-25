@@ -38,6 +38,7 @@ from src.utils.logger import get_module_logger  # type: ignore
 from src.config.settings import ConfigManager  # type: ignore
 from src.browser.tab_manager import TabManager  # type: ignore
 from src.utils.telegram_notifier import TelegramNotifier  # type: ignore
+from src.browser.betburger_nav import get_selected_saved_filter_name  # type: ignore
 from src.utils.snapshots import write_snapshot, read_snapshot, compute_hash  # type: ignore
 from scripts.smoke_betburger_arbs_tabs import (
     login_with_remember_me,
@@ -231,6 +232,17 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
         success_count = 0
         last_hash_by_profile: dict[str, str] = {}
 
+        # Build UI filter name -> profile mapping from YAML
+        yaml_profiles_map = (cfg.channels.get("betburger_profiles") or {})
+        ui_to_profile: dict[str, str] = {}
+        for prof_key, prof_data in yaml_profiles_map.items():
+            try:
+                ui_name = (prof_data.get("ui_filter_name") or "").strip()
+                if ui_name:
+                    ui_to_profile[ui_name] = prof_key
+            except Exception:
+                continue
+
         for i in range(actual_tabs):
             tab_num = i + 1
             logger.info(f"Processing tab {tab_num}/{actual_tabs}")
@@ -244,10 +256,16 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
                     driver.get("https://www.betburger.com/es/arbs")
                     time.sleep(1.0)
 
-                # Get profile and channel for this tab
-                profile_key = os.getenv(f"BETBURGER_TAB_{tab_num}_PROFILE_KEY", "").strip()
+                # Get profile from ENV (fallback) but prefer UI-detected filter mapping
+                configured_profile = os.getenv(f"BETBURGER_TAB_{tab_num}_PROFILE_KEY", "").strip()
+                # If a default UI filter is set for configured profile, we may apply it; but
+                # the final profile selection should prefer what the UI currently shows.
+                ui_selected = get_selected_saved_filter_name(driver) or ""
+                profile_key = ui_to_profile.get(ui_selected) or configured_profile
                 if not profile_key:
-                    logger.warning(f"No profile key for tab {tab_num}, skipping")
+                    logger.warning(
+                        f"No profile resolved for tab {tab_num}; skipping",
+                    )
                     continue
 
                 channel_id = cfg.get_channel_for_profile("betburger", profile_key)

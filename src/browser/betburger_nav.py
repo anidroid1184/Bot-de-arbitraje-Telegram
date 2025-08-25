@@ -55,6 +55,71 @@ def _click_sidebar_link(driver, text_candidates: list[str], timeout: int = 15) -
         return False
 
 
+def get_selected_saved_filter_name(driver, timeout: int = 10) -> Optional[str]:
+    """Best-effort: read the currently selected saved filter name in Betburger UI.
+
+    Heuristics:
+    - Try finding a button/label in the header/filters area that shows the active saved filter name.
+    - As a fallback, try to open the saved filters dropdown and read the item marked as selected.
+    - If not found, return None.
+    """
+    try:
+        wait = WebDriverWait(driver, timeout)
+        # 1) Look for a header/toolbar button with a filter label
+        candidates = [
+            "//div[contains(@class,'filters')]//button[contains(@class,'active') or contains(@class,'selected')][1]",
+            "//button[contains(@class,'filters') or contains(.,'Saved') or contains(.,'Guardados')][1]",
+            "//div[contains(@class,'header') or contains(@class,'toolbar')]//button[contains(@class,'active') or contains(@class,'selected')][1]",
+        ]
+        for xp in candidates:
+            try:
+                btn = wait.until(EC.presence_of_element_located((By.XPATH, xp)))
+                txt = (btn.text or "").strip()
+                if txt:
+                    return txt
+            except Exception:
+                continue
+
+        # 2) Try open the dropdown and read selected item
+        try:
+            # Attempt open (reuse triggers from _apply_ui_filter)
+            triggers = [
+                "//button[contains(., 'Saved') or contains(., 'Guardados') or contains(., 'Filtros')]",
+                "//div[contains(@class,'filters')]//button",
+                "//span[contains(., 'Saved') or contains(., 'Guardados')]/ancestor::button[1]",
+            ]
+            opened = False
+            for xp in triggers:
+                try:
+                    el = wait.until(EC.element_to_be_clickable((By.XPATH, xp)))
+                    driver.execute_script("arguments[0].click();", el)
+                    opened = True
+                    break
+                except Exception:
+                    continue
+            if opened:
+                # Look for selected/checked item
+                sel_xps = [
+                    "//li[@aria-selected='true']",
+                    "//li[contains(@class,'selected') or contains(@class,'active')]",
+                    "//*[self::li or self::div or self::a][contains(@class,'selected') or contains(@class,'active')]",
+                ]
+                for sxp in sel_xps:
+                    try:
+                        node = wait.until(EC.presence_of_element_located((By.XPATH, sxp)))
+                        txt = (node.text or "").strip()
+                        if txt:
+                            return txt
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning("Failed to read selected saved filter name", error=str(e))
+        return None
+    return None
+
+
 def open_bookmakers_page(driver) -> bool:
     """Navigate to Casas de apuestas page.
 

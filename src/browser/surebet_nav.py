@@ -102,3 +102,34 @@ def apply_modal(driver, button_text_candidates: list[str] = None, timeout: int =
         return False
     except Exception:
         return False
+
+
+def get_selected_filter_name(driver, timeout: int = 10) -> Optional[str]:
+    """Return the visible text of the currently selected saved filter.
+
+    Looks up the same 'Filtro' <select> used by select_saved_filter and
+    returns the first selected option's visible text.
+    """
+    try:
+        sidebar = _find_sidebar(driver, timeout=timeout)
+        if not sidebar:
+            logger.warning("Surebet sidebar not found to read selected filter")
+            return None
+
+        label_xp = ".//label[contains(translate(normalize-space(.), 'FILTRO', 'filtro'), 'filtro')]|.//div[contains(@class,'label') and contains(.,'Filtro')]"
+        try:
+            label_el = sidebar.find_element(By.XPATH, label_xp)
+            select_el = label_el.find_element(By.XPATH, "following::select[1]")
+        except NoSuchElementException:
+            select_el = sidebar.find_element(By.XPATH, ".//select[1]")
+
+        sel = Select(select_el)
+        try:
+            opt = sel.first_selected_option
+            name = (opt.text or "").strip()
+            return name or None
+        except Exception:
+            return None
+    except Exception as e:
+        logger.warning("Failed to read selected filter name", error=str(e))
+        return None

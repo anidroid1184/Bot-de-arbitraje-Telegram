@@ -1,18 +1,18 @@
 {
   "source": "betburger",
   "profile": "retabet_valuebets",
-  "timestamp_utc": "2025-08-25T20:25:18Z",
+  "timestamp_utc": "2025-08-25T20:46:37Z",
   "sport": "football",
-  "match": "00 Mogi das Cruzes vs SL Mandic Basquete Brazil. Paulista TO",
+  "match": "1 día No vs ibet 28 ago 10",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Ago 18",
-    "odd": 0.0
+    "bookmaker": "A Novibet 28 Ago 10",
+    "odd": 15.0
   },
   "selection_b": {
-    "bookmaker": "Ndic Basquete Brazil. Paulista To",
-    "odd": 140.5
+    "bookmaker": "A - Cyprus Eurobasket. Eurobasket",
+    "odd": 2025.0
   },
   "roi_pct": 1.0
 }

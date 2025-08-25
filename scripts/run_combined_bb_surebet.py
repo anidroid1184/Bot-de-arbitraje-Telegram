@@ -33,10 +33,11 @@ from src.utils.logger import get_module_logger  # type: ignore
 from src.config.settings import ConfigManager  # type: ignore
 from src.browser.tab_manager import TabManager  # type: ignore
 from src.browser.auth_manager import AuthManager  # type: ignore
-from src.browser.surebet_nav import select_saved_filter  # type: ignore
+from src.browser.surebet_nav import select_saved_filter, get_selected_filter_name  # type: ignore
 from src.processors.surebet_parser import parse_surebet_valuebets_html  # type: ignore
 from src.utils.telegram_notifier import TelegramNotifier  # type: ignore
 from src.utils.snapshots import write_snapshot, read_snapshot, compute_hash  # type: ignore
+from src.utils.command_controller import PauseController, BotCommandListener  # type: ignore
 from src.formatters.message_templates import EventCard, Selection, format_surebet_card  # type: ignore
 from scripts.smoke_betburger_arbs_tabs import (  # type: ignore
     login_with_remember_me,
@@ -141,6 +142,20 @@ def main() -> int:
         return 2
 
     try:
+        # ===== Control plane: Telegram commands (/pause, /start, /status) =====
+        controller = PauseController()
+        cmd_listener = BotCommandListener(controller)
+        cmd_listener.start()
+        # Notify support channel that the bot is connected
+        try:
+            startup_notifier = TelegramNotifier()
+            startup_notifier.send_text(
+                "[control] Bot conectado y en ejecución.\n"
+                "Comandos disponibles: /status, /pause, /start, /start-config, /finish-config"
+            )
+        except Exception as e:
+            logger.warning("Failed to send startup notification", error=str(e))
+
         # ========= Betburger phase (one-time setup) =========
         username = cfg.betburger.username
         password = cfg.betburger.password
@@ -247,6 +262,17 @@ def main() -> int:
             tab_profiles = yaml_profiles[:target_tabs]
         logger.info("Surebet tab->profile mapping", mapping={i+1: p for i, p in enumerate(tab_profiles)})
 
+        # ========= Build UI filter -> profile mapping (from YAML) =========
+        yaml_profiles_map = (cfg.channels.get("surebet_profiles") or {})
+        ui_to_profile: dict[str, str] = {}
+        for prof_key, prof_data in yaml_profiles_map.items():
+            try:
+                ui_name = (prof_data.get("ui_filter_name") or "").strip()
+                if ui_name:
+                    ui_to_profile[ui_name] = prof_key
+            except Exception:
+                continue
+
         # ========= Main loop =========
         run_forever = (os.environ.get("RUN_FOREVER", "false").lower() == "true")
         # Default poll interval: 30s (can be overridden via POLL_INTERVAL_SEC)
@@ -254,6 +280,19 @@ def main() -> int:
         iteration = 0
         while True:
             iteration += 1
+            # Global pause/config check (allows operator to configure manually)
+            if controller.is_paused() or controller.is_config_mode():
+                if iteration % 10 == 1:
+                    if controller.is_paused():
+                        logger.info("Execution paused by operator; sleeping")
+                    else:
+                        logger.info("Config mode active; sleeping (no scraping/sending)")
+                try:
+                    time.sleep(2)
+                except KeyboardInterrupt:
+                    logger.info("Interrupted by user while paused")
+                    return 0
+                continue
             # --- Betburger iteration ---
             try:
                 rc = send_all_tabs_with_driver(tm.driver, cfg)
@@ -264,25 +303,38 @@ def main() -> int:
 
             # --- Surebet iteration ---
             for tab_no in range(1, target_tabs + 1):
-                # Resolve profile per tab from prepared mapping
-                try:
-                    profile_key = tab_profiles[tab_no - 1]
-                except Exception:
-                    logger.warning("No profile mapped for tab (skipping)", tab=tab_no)
-                    continue
-                chat_id = cfg.get_channel_for_profile("surebet", profile_key)
-
-                # Switch to the corresponding Surebet tab handle
+                # Switch to the corresponding Surebet tab handle first
                 tm.driver.switch_to.window(surebet_handles[tab_no - 1])
-                # Filter selection: env overrides YAML ui_filter_name
-                filter_name = os.environ.get(f"SUREBET_TAB_{tab_no}_FILTER_NAME") or cfg.get_profile_ui_filter_name("surebet", profile_key)
-                logger.info("Processing Surebet tab", tab=tab_no, profile=profile_key, filter=filter_name)
 
+                # Resolve filter: ENV override > YAML default > UI selected
+                # First get tentative profile mapping by config
+                try:
+                    configured_profile = tab_profiles[tab_no - 1]
+                except Exception:
+                    configured_profile = None
+                env_filter = os.environ.get(f"SUREBET_TAB_{tab_no}_FILTER_NAME")
+                default_yaml_filter = cfg.get_profile_ui_filter_name("surebet", configured_profile) if configured_profile else None
+                ui_selected_filter = get_selected_filter_name(tm.driver) or None
+                # Pick effective filter name to log and try selecting (if provided by env/default)
+                filter_name = env_filter or default_yaml_filter
+                # If no filter provided to select, keep whatever UI has (ui_selected_filter)
+                effective_ui_filter = filter_name or ui_selected_filter
+
+                # If env/default filter is specified, attempt to select it
                 if filter_name:
                     try:
                         select_saved_filter(tm.driver, filter_name)
                     except Exception as e:
                         logger.warning("Exception selecting filter", error=str(e))
+
+                # Determine profile by UI selected filter (preferred), fallback to configured mapping
+                ui_now = get_selected_filter_name(tm.driver) or effective_ui_filter or ""
+                profile_key = ui_to_profile.get(ui_now) or configured_profile
+                if not profile_key:
+                    logger.warning("Cannot resolve profile for tab; skipping", tab=tab_no, ui_filter=ui_now)
+                    continue
+                chat_id = cfg.get_channel_for_profile("surebet", profile_key)
+                logger.info("Processing Surebet tab", tab=tab_no, profile=profile_key, ui_filter=ui_now)
 
                 html = tm.driver.page_source or ""
 
