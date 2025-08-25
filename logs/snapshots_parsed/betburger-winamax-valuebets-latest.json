@@ -1,17 +1,18 @@
 {
   "source": "betburger",
   "profile": "winamax-valuebets",
-  "timestamp_utc": "2025-08-25T13:39:24Z",
+  "timestamp_utc": "2025-08-25T20:25:10Z",
   "sport": "football",
+  "match": "00 Mogi das Cruzes vs SL Mandic Basquete Brazil. Paulista TO",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Corners 1.18 1",
+    "bookmaker": "Ago 18",
     "odd": 0.0
   },
   "selection_b": {
-    "bookmaker": "Tbol 23 Minutos Olimp 30 Ago 05",
-    "odd": 0.0
+    "bookmaker": "Ndic Basquete Brazil. Paulista To",
+    "odd": 140.5
   },
   "roi_pct": 1.0
 }

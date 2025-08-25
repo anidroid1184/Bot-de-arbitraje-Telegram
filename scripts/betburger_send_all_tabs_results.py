@@ -30,6 +30,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from bs4 import BeautifulSoup  # type: ignore
+from selenium.webdriver.common.by import By  # type: ignore
+from selenium.webdriver.support.ui import WebDriverWait  # type: ignore
+from selenium.webdriver.support import expected_conditions as EC  # type: ignore
 
 from src.utils.logger import get_module_logger  # type: ignore
 from src.config.settings import ConfigManager  # type: ignore
@@ -41,8 +44,30 @@ from scripts.smoke_betburger_arbs_tabs import (
     duplicate_tabs_to,
 )  # type: ignore
 from scripts.process_snapshots import process_file as process_snapshot_file  # type: ignore
+from src.formatters.message_templates import EventCard, Selection, format_surebet_card  # type: ignore
+from src.processing.required_fields import (
+    get_required_fields,
+    validate_alert_fields,
+)  # type: ignore
 
 logger = get_module_logger("betburger_send_all_tabs_results")
+
+
+def _safe_parse_dt(val: Optional[str]):
+    """Parse ISO-like string (supports trailing 'Z') to aware UTC datetime or None."""
+    if not val:
+        return None
+    try:
+        from datetime import datetime, timezone
+        s = val.strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
 
 
 def _extract_rows(html: str, max_items: int = 5) -> List[dict]:
@@ -118,6 +143,61 @@ def _extract_rows(html: str, max_items: int = 5) -> List[dict]:
     return items[:max_items]
 
 
+def _apply_ui_filter(driver, filter_name: str, timeout: int = 15) -> bool:
+    """Best-effort: select a saved filter in Betburger UI by exact visible text.
+
+    Returns True if a click was performed, False otherwise.
+    Tolerant to UI changes: tries a few common selectors.
+    """
+    if not filter_name:
+        return False
+    try:
+        wait = WebDriverWait(driver, timeout)
+        # 1) Open saved filters dropdown/menu
+        # Try multiple triggers (button/icon/text)
+        triggers = [
+            "//button[contains(., 'Saved') or contains(., 'Guardados') or contains(., 'Filtros')]",
+            "//div[contains(@class,'filters')]//button",
+            "//span[contains(., 'Saved') or contains(., 'Guardados')]/ancestor::button[1]",
+        ]
+        opened = False
+        for xp in triggers:
+            try:
+                el = wait.until(EC.element_to_be_clickable((By.XPATH, xp)))
+                driver.execute_script("arguments[0].click();", el)
+                opened = True
+                break
+            except Exception:
+                continue
+        if not opened:
+            # Try focusing the header bar to reveal filters
+            try:
+                driver.find_element(By.TAG_NAME, "body").send_keys(" ")
+            except Exception:
+                pass
+
+        # 2) Click the option by text
+        option_xps = [
+            f"//li[.//text()[normalize-space()='{filter_name}']]",
+            f"//*[self::li or self::div or self::a][normalize-space()='{filter_name}']",
+        ]
+        for oxp in option_xps:
+            try:
+                opt = wait.until(EC.element_to_be_clickable((By.XPATH, oxp)))
+                driver.execute_script("arguments[0].click();", opt)
+                # 3) Wait for content refresh: percent blocks reload
+                try:
+                    wait.until(lambda d: "%" in (d.page_source or ""))
+                except Exception:
+                    pass
+                return True
+            except Exception:
+                continue
+    except Exception:
+        return False
+    return False
+
+
 def _format_summary(items: List[dict], tab_num: int, profile_key: str) -> str:
     lines = [f"📢 Betburger | Pestaña {tab_num} ({profile_key})"]
     if not items:
@@ -176,6 +256,16 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
                     logger.warning(f"No target channel for tab {tab_num} profile {profile_key}")
                     continue
 
+                # Apply saved UI filter if configured for this profile
+                try:
+                    ui_filter = cfg.get_profile_ui_filter_name("betburger", profile_key)
+                    if ui_filter:
+                        applied = _apply_ui_filter(driver, ui_filter, timeout=cfg.bot.browser_timeout)
+                        logger.info("Applied UI filter", tab=tab_num, profile=profile_key, ui_filter=ui_filter, applied=applied)
+                        time.sleep(0.5)
+                except Exception as fe:
+                    logger.warning("Failed applying UI filter; continuing", error=str(fe), tab=tab_num, profile=profile_key)
+
                 # Extract and send results (and optionally save snapshot)
                 time.sleep(1.0)  # Allow content to render
                 html = driver.page_source or ""
@@ -202,36 +292,50 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
                         if latest.exists():
                             try:
                                 data = json.loads(latest.read_text(encoding="utf-8", errors="ignore"))
-                                sport = (data.get("sport") or "").title()
-                                match = data.get("match") or ""
-                                market = data.get("market") or ""
-                                roi = data.get("roi_pct")
+                                # Validate against required fields for this profile
+                                req = get_required_fields(cfg, "betburger", profile_key)
+                                valid, missing = validate_alert_fields(data, req)
+                                if not valid:
+                                    logger.info(
+                                        "Skipping send: missing required fields",
+                                        missing=missing,
+                                        profile=profile_key,
+                                        tab=tab_num,
+                                    )
+                                    time.sleep(0.2)
+                                    continue
+                                # Build formatted EventCard using unified formatter
                                 sel_a = data.get("selection_a") or {}
                                 sel_b = data.get("selection_b") or {}
-                                a_bk = sel_a.get("bookmaker") or "?"
-                                a_od = sel_a.get("odd") or "?"
-                                b_bk = sel_b.get("bookmaker") or "?"
-                                b_od = sel_b.get("odd") or "?"
-                                link = data.get("target_link")
-                                if isinstance(link, str) and link and not link.startswith(("http://", "https://")):
-                                    base = (cfg.betburger.base_url or "https://betburger.com").rstrip("/")
-                                    if link.startswith("/"):
-                                        link = base + link
-                                    else:
-                                        link = base + "/" + link
-                                lines = [f"📢 Betburger | Tab {tab_num} ({profile_key})"]
-                                head = f"{sport} • {market} — {match}".strip()
-                                if head:
-                                    lines.append(head)
-                                if isinstance(roi, (int, float)):
-                                    lines.append(f"ROI: {roi:.2f}%")
-                                odds_line = f"{a_bk}: {a_od}"
-                                if sel_b:
-                                    odds_line += f" | {b_bk}: {b_od}"
-                                lines.append(odds_line)
-                                if link:
-                                    lines.append(f"Link: {link}")
-                                text = "\n".join(lines)
+                                defaults = cfg.get_profile_defaults("betburger", profile_key) or {}
+                                def_a = (defaults.get("selection_a") or {})
+                                def_b = (defaults.get("selection_b") or {})
+                                def_market = defaults.get("market_label") or ""
+                                global_market = data.get("market") or ""
+                                market_a = sel_a.get("market_label") or sel_a.get("market") or global_market or def_market or ""
+                                market_b = sel_b.get("market_label") or sel_b.get("market") or global_market or def_market or ""
+
+                                card = EventCard(
+                                    source_prefix="BB",
+                                    selection_a=Selection(
+                                        bookmaker=(sel_a.get("bookmaker") or def_a.get("bookmaker") or ""),
+                                        label=market_a,
+                                        odd=sel_a.get("odd", "?")
+                                    ),
+                                    selection_b=Selection(
+                                        bookmaker=(sel_b.get("bookmaker") or def_b.get("bookmaker") or ""),
+                                        label=market_b,
+                                        odd=sel_b.get("odd", "?")
+                                    ),
+                                    sport=(data.get("sport") or ""),
+                                    league=(data.get("league") or data.get("competition") or ""),
+                                    start_time=None,
+                                    match=(data.get("match") or ""),
+                                    # Map ROI to value_pct for footer formatting
+                                    value_pct=data.get("roi_pct"),
+                                    reference_time=_safe_parse_dt(data.get("timestamp_utc")),
+                                )
+                                text = format_surebet_card(card)
                                 ok = notifier.send_text(text, chat_id=target)
                                 logger.info(
                                     f"Tab {tab_num} JSON-based message sent", ok=ok, target=target, profile=profile_key

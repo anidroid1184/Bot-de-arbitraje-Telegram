@@ -123,17 +123,22 @@ class ConfigManager:
         )
     
     def _load_channel_mapping(self) -> Dict:
-        """Load channel mapping from YAML file"""
-        # Preferred path: src/config/config.yml (co-located with this module)
+        """Load channel mapping from YAML file.
+
+        Search order:
+        1) src/config/config-configurada.yml
+        2) src/config/config.yml
+        3) repo_root/config.yml
+        4) repo_root/config/channels.yaml (legacy)
+        """
         src_dir = os.path.dirname(__file__)
         project_root = os.path.abspath(os.path.join(src_dir, os.pardir))
+        configured = os.path.join(src_dir, "config-configurada.yml")
         preferred = os.path.join(src_dir, "config.yml")
-        # Secondary preferred path: project root config.yml (repo_root/config.yml)
         root_config = os.path.join(project_root, "config.yml")
-        # Backward-compatible fallback: repo_root/config/channels.yaml
         fallback = os.path.join(project_root, self.config_dir, "channels.yaml")
 
-        for path in (preferred, root_config, fallback):
+        for path in (configured, preferred, root_config, fallback):
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     data = yaml.safe_load(f)
@@ -154,3 +159,32 @@ class ConfigManager:
     def get_support_channel(self) -> Optional[str]:
         """Get technical support channel ID"""
         return self.channels.get("support", {}).get("technical_alerts", {}).get("channel_id")
+
+    def get_profile_defaults(self, platform: str, profile: str) -> Dict:
+        """Return defaults dict for a given platform/profile without touching IDs.
+
+        Expected structure in YAML:
+        <platform>_profiles:
+          <profile>:
+            defaults:
+              selection_a: { bookmaker: "..." }
+              selection_b: { bookmaker: "..." }
+              market_label: "..."
+        """
+        key = f"{platform}_profiles"
+        return self.channels.get(key, {}).get(profile, {}).get("defaults", {}) or {}
+
+    def get_profile_ui_filter_name(self, platform: str, profile: str) -> Optional[str]:
+        """Return UI filter name (saved filter label) for a given platform/profile.
+
+        Expected structure in YAML:
+        <platform>_profiles:
+          <profile>:
+            ui_filter_name: "<text as appears in Betburger saved filters>"
+        """
+        key = f"{platform}_profiles"
+        value = self.channels.get(key, {}).get(profile, {}).get("ui_filter_name")
+        if isinstance(value, str):
+            v = value.strip()
+            return v or None
+        return None

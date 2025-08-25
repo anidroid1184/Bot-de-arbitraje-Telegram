@@ -1,10 +1,12 @@
-# src/config/config.yml
+# Mapping of filters to Telegram channels
+# Each profile/filter gets its own channel
 
+# Global defaults and notification routing
 defaults:
   notifications:
-    error_channel: "-1002922469529"   # soporte técnico
+    error_channel: "-1002922469529"  # support.technical_alerts
   message_policy:
-    preserve_hours: 24                # futura retención de mensajes
+    preserve_hours: 24  # client requests 12-24h visibility (future use)
 
 betburger_profiles:
   bet365_valuebets:
@@ -17,9 +19,9 @@ betburger_profiles:
       - sports: ["football", "tennis"]
       - bookmakers: ["bet365"]
     required_fields: ["timestamp_utc", "match", "selection_a.bookmaker", "selection_a.odd", "selection_b.bookmaker", "selection_b.odd", "roi_pct"]
-
+  
   winamax-valuebets:
-    channel_id: "-1002868073429"
+    channel_id: "-1002868073429" 
     description: "Betburger Profile 2 - Basketball alerts"
     platform: betburger
     type: valuebets
@@ -28,7 +30,7 @@ betburger_profiles:
       - sports: ["basketball"]
       - bookmakers: ["winamax"]
     required_fields: ["timestamp_utc", "match", "selection_a.bookmaker", "selection_a.odd", "selection_b.bookmaker", "selection_b.odd", "roi_pct"]
-
+  
   codere_valuebets:
     channel_id: "-1003085949789"
     description: "Betburger Profile 3 - All sports low ROI"
@@ -59,17 +61,18 @@ betburger_profiles:
       - bookmakers: ["winamax", "bet365"]
     required_fields: ["timestamp_utc", "match", "selection_a.bookmaker", "selection_a.odd", "selection_b.bookmaker", "selection_b.odd", "roi_pct"]
 
-  filtro_6:
+    filtro_6:
     channel_id: "-1003073937037"
     description: "Betburger Tabs - Filtro 6"
     platform: betburger
     type: valuebets
     filters:
-      - min_roi: 3.0
+      - min_roi: 3.0            # ajusta según tu criterio
       - bookmakers: ["bet365"]
     required_fields: ["timestamp_utc", "match", "selection_a.bookmaker", "selection_a.odd", "selection_b.bookmaker", "selection_b.odd", "roi_pct"]
 
 surebet_profiles:
+
   ev-surebets:
     channel_id: "-1003051607294"
     description: "Surebet Valuebets - Main channel"
@@ -118,10 +121,18 @@ surebet_profiles:
         bookmaker: "Bet365"
       market_label: ""
 
+
+# Support channels
 support:
   technical_alerts:
     channel_id: "-1002922469529"
     description: "Technical errors and reconnection alerts"
 
-# Si quisieras mapear filtros UI por pestaña desde config (no necesario si lo haces manual en el navegador):
-# betburger_tab_filters: []
+## Optional: UI tab → filter name mapping for Betburger /es/arbs
+## Use this to configure the filter label to select per tab (supports spaces).
+## The order is tab1, tab2, ... If you prefer a dict, you can also use:
+##   betburger_tab_filters:
+##     1: "Winamax Prematch"
+##     2: "Codere Valuebets"
+## Default is empty (script will fallback to .env BETBURGER_TAB_<i>_FILTER)
+betburger_tab_filters: []

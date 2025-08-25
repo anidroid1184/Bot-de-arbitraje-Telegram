@@ -1,17 +1,17 @@
 {
   "source": "surebet",
   "profile": "filtro_2",
-  "timestamp_utc": "2025-08-25T13:36:27Z",
+  "timestamp_utc": "2025-08-25T20:22:00Z",
   "sport": "football",
-  "market": "1X2",
-  "target_link": "/prices",
+  "match": "40 Argentina vs Colombia FIBA Americup 2025. Nicaragua 1 1.",
+  "target_link": "/",
   "selection_a": {
     "bookmaker": null,
-    "odd": 1.0
+    "odd": 1.8
   },
   "selection_b": {
     "bookmaker": null,
-    "odd": 6.11
+    "odd": 61.0
   },
-  "value_pct": 1.0
+  "value_pct": 9.86
 }

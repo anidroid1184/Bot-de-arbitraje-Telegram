@@ -51,7 +51,10 @@ SPORT_TOKENS = {
 
 PERCENT_RE = re.compile(r"(?P<val>-?\d{1,3}([\.,]\d{1,2})?)\s*%")
 ODD_RE = re.compile(r"(?P<odd>\d{1,2}(?:[\.,]\d{1,3})?)")
-TEAM_VS_RE = re.compile(r"([A-Za-zÀ-ÿ0-9\-\.\s]{2,})\s+vs\s+([A-Za-zÀ-ÿ0-9\-\.\s]{2,})", re.IGNORECASE)
+TEAM_VS_RE = re.compile(
+    r"([A-Za-zÀ-ÿ0-9\-\.\s]{2,})\s*(?:vs|v\.?|[-–—])\s*([A-Za-zÀ-ÿ0-9\-\.\s]{2,})",
+    re.IGNORECASE,
+)
 BRACKETS_PERIOD_RE = re.compile(r"\[(?P<period>[^\]]+)\]")
 
 

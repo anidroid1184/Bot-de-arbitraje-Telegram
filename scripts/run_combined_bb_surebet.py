@@ -16,11 +16,13 @@ Env:
 from __future__ import annotations
 
 import os
-import sys
-import time
 import json
+import os
+import time
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime, timezone
+import sys
 
 # Ensure package imports
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +37,7 @@ from src.browser.surebet_nav import select_saved_filter  # type: ignore
 from src.processors.surebet_parser import parse_surebet_valuebets_html  # type: ignore
 from src.utils.telegram_notifier import TelegramNotifier  # type: ignore
 from src.utils.snapshots import write_snapshot, read_snapshot, compute_hash  # type: ignore
+from src.formatters.message_templates import EventCard, Selection, format_surebet_card  # type: ignore
 from scripts.smoke_betburger_arbs_tabs import (  # type: ignore
     login_with_remember_me,
     duplicate_tabs_to as bb_duplicate_tabs_to,
@@ -59,6 +62,32 @@ def _abs_url(base: str, link: Optional[str]) -> Optional[str]:
         return None
     if link.startswith("http://") or link.startswith("https://"):
         return link
+
+
+def _safe_parse_dt(val: Optional[str]) -> Optional[datetime]:
+    """Parse ISO8601-like string to aware UTC datetime; return None if invalid."""
+    if not val:
+        return None
+    try:
+        s = val.strip()
+        # Support trailing 'Z'
+        if s.endswith('Z'):
+            s = s[:-1] + '+00:00'
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _safe_float(val) -> Optional[float]:
+    try:
+        if val is None:
+            return None
+        return float(val)
+    except Exception:
+        return None
     if link.startswith("/"):
         return base.rstrip("/") + link
     return link
@@ -159,21 +188,69 @@ def main() -> int:
         time.sleep(1.0)
 
         target_tabs = _get_env_int("SUREBET_TABS", 3)
-        # Ensure we have at least target_tabs by opening new ones of current url (only once)
-        while len(tm.driver.window_handles) < target_tabs:
-            tm.driver.execute_script("window.open(window.location.href, '_blank');")
+        # Ensure we have at least `target_tabs` TABS ON SUREBET (not just total tabs)
+        # 1) Build current list of Surebet handles
+        all_handles: List[str] = tm.driver.window_handles
+        surebet_handles: List[str] = []
+        for h in all_handles:
+            try:
+                tm.driver.switch_to.window(h)
+                url = tm.driver.current_url
+            except Exception:
+                url = ""
+            if "surebet.com" in (url or ""):
+                surebet_handles.append(h)
+
+        # 2) Open new tabs duplicating the current Surebet URL until we reach target_tabs
+        # Make sure current tab is on Surebet URL
+        tm.driver.get(target_url_sb)
+        time.sleep(0.5)
+        while len(surebet_handles) < target_tabs:
+            tm.driver.execute_script("window.open(arguments[0], '_blank');", target_url_sb)
             time.sleep(0.6)
-        handles: List[str] = tm.driver.window_handles
-        logger.info("Surebet tabs ready", count=len(handles))
+            # The newly opened handle is at the end
+            new_handles = tm.driver.window_handles
+            new_h = [h for h in new_handles if h not in all_handles]
+            if new_h:
+                surebet_handles.append(new_h[0])
+                all_handles = new_handles
+
+        logger.info("Surebet tabs ready", count=len(surebet_handles))
+
+        # Optional: give operator time to login/apply filters manually in Surebet tabs
+        try:
+            wait_sec = int(os.environ.get("MANUAL_SUREBET_SETUP_WAIT_SEC", "0") or "0")
+        except Exception:
+            wait_sec = 0
+        if wait_sec > 0:
+            logger.info("Waiting for manual Surebet setup (login/filters)", seconds=wait_sec)
+            time.sleep(wait_sec)
 
         # Snapshot config (optional)
         snapshot_enabled = (os.environ.get("SNAPSHOT_ENABLED", "false").lower() == "true")
         snapshot_dir = Path(os.environ.get("SNAPSHOT_DIR", str(ROOT / "logs" / "html")))
         last_hash_by_profile: dict[str, str] = {}
 
+        # ========= Determine tab -> profile mapping =========
+        # Priority 1: Environment variables SUREBET_TAB_<i>_PROFILE_KEY
+        # Priority 2: YAML order (surebet_profiles mapping order)
+        env_profiles: list[str] = []
+        for i in range(1, target_tabs + 1):
+            v = os.environ.get(f"SUREBET_TAB_{i}_PROFILE_KEY")
+            if v:
+                env_profiles.append(v)
+        if len(env_profiles) == target_tabs:
+            tab_profiles = env_profiles
+        else:
+            # Use YAML order (dict preserves order in Python 3.7+)
+            yaml_profiles = list((cfg.channels.get("surebet_profiles") or {}).keys())
+            tab_profiles = yaml_profiles[:target_tabs]
+        logger.info("Surebet tab->profile mapping", mapping={i+1: p for i, p in enumerate(tab_profiles)})
+
         # ========= Main loop =========
         run_forever = (os.environ.get("RUN_FOREVER", "false").lower() == "true")
-        poll_sec = _get_env_int("POLL_INTERVAL_SEC", 180)
+        # Default poll interval: 30s (can be overridden via POLL_INTERVAL_SEC)
+        poll_sec = _get_env_int("POLL_INTERVAL_SEC", 30)
         iteration = 0
         while True:
             iteration += 1
@@ -187,15 +264,19 @@ def main() -> int:
 
             # --- Surebet iteration ---
             for tab_no in range(1, target_tabs + 1):
-                profile_key = os.environ.get(f"SUREBET_TAB_{tab_no}_PROFILE_KEY")
-                if not profile_key:
-                    logger.warning("Missing profile for tab", tab=tab_no)
+                # Resolve profile per tab from prepared mapping
+                try:
+                    profile_key = tab_profiles[tab_no - 1]
+                except Exception:
+                    logger.warning("No profile mapped for tab (skipping)", tab=tab_no)
                     continue
                 chat_id = cfg.get_channel_for_profile("surebet", profile_key)
 
-                tm.driver.switch_to.window(handles[tab_no - 1])
-                filter_name = os.environ.get(f"SUREBET_TAB_{tab_no}_FILTER_NAME")
-                logger.info("Processing Surebet tab", tab=tab_no, profile=profile_key)
+                # Switch to the corresponding Surebet tab handle
+                tm.driver.switch_to.window(surebet_handles[tab_no - 1])
+                # Filter selection: env overrides YAML ui_filter_name
+                filter_name = os.environ.get(f"SUREBET_TAB_{tab_no}_FILTER_NAME") or cfg.get_profile_ui_filter_name("surebet", profile_key)
+                logger.info("Processing Surebet tab", tab=tab_no, profile=profile_key, filter=filter_name)
 
                 if filter_name:
                     try:
@@ -234,24 +315,38 @@ def main() -> int:
                                     notifier.send_text(msg, chat_id=chat_id)
                                     logger.info("Surebet JSON message sent", tab=tab_no, profile=profile_key)
                                     continue  # done with this tab
-                                sport = (data.get("sport") or "").title()
-                                market = data.get("market") or ""
-                                match = data.get("match") or ""
-                                value = data.get("value_pct")
+                                # Build formatted card (Europe/Madrid, comma pct)
                                 sel_a = data.get("selection_a") or {}
-                                a_bk = sel_a.get("bookmaker", "?")
-                                a_od = sel_a.get("odd", "?")
-                                link = _abs_url(cfg.surebet.base_url, data.get("target_link"))
-                                lines = [f"[surebet] Última alerta (perfil: {profile_key}, tab {tab_no})"]
-                                head = f"{sport} • {market} — {match}".strip()
-                                if head:
-                                    lines.append(head)
-                                if isinstance(value, (int, float)):
-                                    lines.append(f"VALUE: {value:.2f}%")
-                                lines.append(f"{a_bk}: {a_od}")
-                                if link:
-                                    lines.append(f"Link: {link}")
-                                msg = "\n".join(lines)
+                                sel_b = data.get("selection_b") or {}
+                                # Load per-profile defaults (does not affect channel_id)
+                                defaults = cfg.get_profile_defaults("surebet", profile_key) or {}
+                                def_a = (defaults.get("selection_a") or {})
+                                def_b = (defaults.get("selection_b") or {})
+                                def_market = defaults.get("market_label") or ""
+                                # Many Surebet snapshots don't include per-selection labels; fallback to global market
+                                global_market = data.get("market") or ""
+                                market_a = sel_a.get("market_label") or sel_a.get("market") or global_market or def_market or ""
+                                market_b = sel_b.get("market_label") or sel_b.get("market") or global_market or def_market or ""
+                                card = EventCard(
+                                    source_prefix="SU",
+                                    selection_a=Selection(
+                                        bookmaker=(sel_a.get("bookmaker") or def_a.get("bookmaker") or ""),
+                                        label=market_a,
+                                        odd=sel_a.get("odd", "?")
+                                    ),
+                                    selection_b=Selection(
+                                        bookmaker=(sel_b.get("bookmaker") or def_b.get("bookmaker") or ""),
+                                        label=market_b,
+                                        odd=sel_b.get("odd", "?")
+                                    ),
+                                    sport=(data.get("sport") or "Fútbol"),
+                                    league=(data.get("league") or data.get("competition") or ""),
+                                    start_time=_safe_parse_dt(data.get("event_start") or data.get("start_time_utc")),
+                                    match=(data.get("match") or ""),
+                                    value_pct=_safe_float(data.get("value_pct") or data.get("roi_pct")),
+                                    reference_time=_safe_parse_dt(data.get("timestamp_utc")),
+                                )
+                                msg = format_surebet_card(card)
                                 notifier.send_text(msg, chat_id=chat_id)
                                 logger.info("Surebet JSON-based message sent", tab=tab_no, profile=profile_key)
                                 continue  # done with this tab
@@ -262,8 +357,6 @@ def main() -> int:
                     except Exception as e:
                         logger.warning("Snapshot write/read failed; parsing from memory", error=str(e))
                         html_to_parse = html
-                    logger.warning("Snapshot write/read failed; parsing from memory", error=str(e))
-                    html_to_parse = html
                 else:
                     html_to_parse = html
 

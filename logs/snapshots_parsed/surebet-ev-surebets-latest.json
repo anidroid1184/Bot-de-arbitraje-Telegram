@@ -1,17 +1,18 @@
 {
   "source": "surebet",
   "profile": "ev-surebets",
-  "timestamp_utc": "2025-08-25T13:36:24Z",
+  "timestamp_utc": "2025-08-25T20:25:32Z",
   "sport": "football",
+  "match": "- Corners 1.86 vs bet 28 ago 14",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
     "bookmaker": null,
-    "odd": 6.11
+    "odd": 9.5
   },
   "selection_b": {
     "bookmaker": null,
-    "odd": 1.21
+    "odd": 1.86
   },
   "value_pct": 1.0
 }

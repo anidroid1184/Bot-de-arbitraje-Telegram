@@ -1,16 +1,17 @@
 {
   "source": "betburger",
   "profile": "filtro_6",
-  "timestamp_utc": "2025-08-25T13:39:38Z",
+  "timestamp_utc": "2025-08-25T20:25:29Z",
   "sport": "football",
+  "match": "Alexei - Ruusu vs uori",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Tbol 16 Minutos 1Xbet 25 Ago 09",
-    "odd": 0.0
+    "bookmaker": "Ago 11",
+    "odd": 10.0
   },
   "selection_b": {
-    "bookmaker": "England. National League North A",
+    "bookmaker": "Hard A",
     "odd": 1.0
   },
   "roi_pct": 1.0

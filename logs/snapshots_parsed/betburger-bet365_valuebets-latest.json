@@ -1,17 +1,18 @@
 {
   "source": "betburger",
   "profile": "bet365_valuebets",
-  "timestamp_utc": "2025-08-25T13:39:21Z",
+  "timestamp_utc": "2025-08-25T20:25:05Z",
   "sport": "football",
+  "match": "- Corners 1.86 vs bet 28 ago 14",
   "market": "1X2",
   "target_link": "/prices",
   "selection_a": {
-    "bookmaker": "Tbol 23 Minutos Olimp 30 Ago 05",
-    "odd": 0.0
+    "bookmaker": "Onference League Qualification To",
+    "odd": 9.5
   },
   "selection_b": {
-    "bookmaker": "Obolon Ukraine. Premier League 2",
-    "odd": 6.11
+    "bookmaker": "Corners 1.86 Vbet 28 Ago 14",
+    "odd": 0.0
   },
   "roi_pct": 1.0
 }
