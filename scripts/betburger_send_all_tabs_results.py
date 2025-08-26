@@ -23,6 +23,7 @@ import time
 import json
 from pathlib import Path
 from typing import List
+from urllib.parse import urlparse
 
 # Imports setup
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,9 @@ from src.processing.required_fields import (
     get_required_fields,
     validate_alert_fields,
 )  # type: ignore
+from src.snapshots.snapshot_manager import save_html_snapshot  # type: ignore
+from src.network.betburger_extract import extract_tokens_from_request  # type: ignore
+from src.ocr.ocr_utils import ocr_webelement  # type: ignore
 
 logger = get_module_logger("betburger_send_all_tabs_results")
 
@@ -354,6 +358,15 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
                                     reference_time=_safe_parse_dt(data.get("timestamp_utc")),
                                 )
                                 text = format_surebet_card(card)
+                                # Append temporary debug lines if enabled (uses previously captured net_meta)
+                                if os.environ.get("DEBUG_ROUTE_HINTS", "false").lower() == "true":
+                                    try:
+                                        lf = net_meta.get("last_filter_id")
+                                        sigs = ", ".join((net_meta.get("signals") or [])[:5])
+                                        dbg = f"\n\n[debug] Id detectado: {lf}\n[debug] Filtro detectado: {profile_key} (UI: {ui_selected})\n[debug] Señales: {sigs}"
+                                        text = text + dbg
+                                    except Exception:
+                                        pass
                                 ok = notifier.send_text(text, chat_id=target)
                                 logger.info(
                                     f"Tab {tab_num} JSON-based message sent", ok=ok, target=target, profile=profile_key
@@ -370,9 +383,102 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
                     except Exception as e:
                         logger.warning("Failed to save/read Betburger snapshot; parsing from memory", error=str(e), tab=tab_num, profile=profile_key)
                         html_to_parse = html
+                # --- Gather recent network tokens (Selenium Wire) BEFORE sending ---
+                net_meta = {}
+                try:
+                    reqs = getattr(driver, "requests", None)
+                    if reqs is not None:
+                        signals: list[str] = []
+                        last_filter_id = None
+                        # Look back over a limited recent window
+                        for req in list(reqs)[-200:]:
+                            try:
+                                url = getattr(req, "url", "")
+                                method = getattr(req, "method", "")
+                                if not url:
+                                    continue
+                                p = urlparse(url)
+                                if "betburger.com" not in (p.netloc or ""):
+                                    continue
+                                path = p.path or ""
+                                if ("/api/v1/arbs/pro_search" not in path) and ("/api/v1/search_filters/" not in path):
+                                    continue
+                                # Headers/body (safe-only extraction downstream)
+                                headers = dict(getattr(req, "headers", {}) or {})
+                                body = getattr(req, "body", None)
+                                tokens = extract_tokens_from_request(url, method, headers, body)
+                                if not tokens:
+                                    continue
+                                sigs = tokens.get("signals") or []
+                                for s in sigs:
+                                    if isinstance(s, str) and s not in signals:
+                                        signals.append(s)
+                                fid = tokens.get("filter_id")
+                                if fid is not None:
+                                    last_filter_id = fid
+                            except Exception:
+                                continue
+                        if signals or last_filter_id is not None:
+                            net_meta = {
+                                "signals": signals[:30],
+                                "last_filter_id": last_filter_id,
+                            }
+                        # Optional: clear buffer to avoid growth
+                        try:
+                            reqs.clear()
+                        except Exception:
+                            pass
+                except Exception as ne:
+                    logger.warning("Network token capture failed (non-fatal)", error=str(ne), tab=tab_num)
+
+                # --- Optional OCR of filter sidebar (helps identify tab/filter visually) ---
+                ocr_text = ""
+                try:
+                    if os.environ.get("OCR_ENABLED", "false").lower() == "true":
+                        # Try common selectors for sidebar / filter panel
+                        candidates = [
+                            "//aside[contains(@class,'filters') or contains(@class,'sidebar')]",
+                            "//div[contains(@class,'filters') or contains(@class,'sidebar')]",
+                            "//div[contains(@data-testid,'filters') or contains(@data-testid,'sidebar')]",
+                        ]
+                        side = None
+                        wait = WebDriverWait(driver, 5)
+                        for xp in candidates:
+                            try:
+                                side = wait.until(EC.visibility_of_element_located((By.XPATH, xp)))
+                                if side:
+                                    break
+                            except Exception:
+                                continue
+                        if side is None:
+                            # fallback: try body (coarse)
+                            try:
+                                side = driver.find_element(By.TAG_NAME, "body")
+                            except Exception:
+                                side = None
+                        if side is not None:
+                            # Ensure in view
+                            try:
+                                driver.execute_script("arguments[0].scrollIntoView({block: 'nearest'});", side)
+                            except Exception:
+                                pass
+                            ocr_text = ocr_webelement(side, lang=os.environ.get("OCR_LANG", "eng")) or ""
+                except Exception as oe:
+                    logger.warning("OCR capture failed (non-fatal)", error=str(oe), tab=tab_num)
+
                 # Fallback path (snapshots disabled or JSON not available): send summary from HTML
                 items = _extract_rows(html_to_parse, max_items=5)
                 text = _format_summary(items, tab_num, profile_key)
+                # Append temporary debug lines if enabled
+                if os.environ.get("DEBUG_ROUTE_HINTS", "false").lower() == "true":
+                    try:
+                        lf = net_meta.get("last_filter_id")
+                        sigs = ", ".join((net_meta.get("signals") or [])[:5])
+                        ocr_part = f"\n[debug] OCR: {ocr_text[:200]}" if ocr_text else ""
+                        dbg = f"\n\n[debug] Id detectado: {lf}\n[debug] Filtro detectado: {profile_key} (UI: {ui_selected})\n[debug] Señales: {sigs}{ocr_part}"
+                        text = text + dbg
+                    except Exception:
+                        pass
 
                 ok = notifier.send_text(text, chat_id=target)
                 logger.info(
@@ -383,6 +489,26 @@ def send_all_tabs_with_driver(driver, cfg: ConfigManager) -> int:
                     success_count += 1
 
                 time.sleep(0.5)  # Brief pause between tabs
+
+                # --- Save HTML snapshot en snapshot_manager para habilitar /label ---
+                try:
+                    cur_url = driver.current_url or ""
+                    save_html_snapshot(
+                        platform="betburger",
+                        tab_id=tab_num,
+                        html=html_to_parse,
+                        url=cur_url,
+                        title="",
+                        extras={
+                            "profile": profile_key,
+                            "ui_selected": ui_selected,
+                            "timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                            "net": net_meta,
+                            "ocr_sidebar": (ocr_text or None),
+                        },
+                    )
+                except Exception as se:
+                    logger.warning("Failed to save Betburger snapshot for learning", error=str(se), tab=tab_num)
 
             except Exception as e:
                 logger.error(f"Error processing tab {tab_num}", error=str(e))

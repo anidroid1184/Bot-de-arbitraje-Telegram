@@ -1,18 +1,17 @@
 {
   "source": "betburger",
   "profile": "codere_valuebets",
-  "timestamp_utc": "2025-08-25T20:46:32Z",
-  "sport": "football",
-  "match": "encvarosi Europe. Champions League. Qualifying 2 vs Corners 3.05 Sportmarket 27 ago 11",
+  "timestamp_utc": "2025-08-26T01:08:24Z",
+  "match": "10 Opelka R. - Alcaraz C. M vs US Open",
   "market": "1X2",
-  "target_link": "/prices",
+  "target_link": "/es/main/scans",
   "selection_a": {
-    "bookmaker": "Ope. Champions League. Qualifying",
-    "odd": 2.0
+    "bookmaker": "Una 25 Ago 20",
+    "odd": 10.0
   },
   "selection_b": {
-    "bookmaker": "Corners 3.05 Sportmarket 27 Ago",
-    "odd": 11.0
+    "bookmaker": "Dvouhra To",
+    "odd": 33.5
   },
-  "roi_pct": 1.0
+  "roi_pct": 15.3
 }

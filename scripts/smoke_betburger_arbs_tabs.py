@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 from src.utils.logger import get_module_logger  # type: ignore
 from src.config.settings import ConfigManager  # type: ignore
 from src.browser.tab_manager import TabManager  # type: ignore
+from src.browser.session_store import save_session  # type: ignore
 from selenium.webdriver.common.by import By  # type: ignore
 from selenium.webdriver.support.ui import WebDriverWait  # type: ignore
 from selenium.webdriver.support import expected_conditions as EC  # type: ignore
@@ -230,6 +231,15 @@ def main() -> int:
         tabs = int(os.environ.get("BETBURGER_TABS", "6") or "6")
         duplicate_tabs_to(tm.driver, tabs)
         _assert(len(tm.driver.window_handles) == tabs, f"Expected {tabs} tabs, got {len(tm.driver.window_handles)}")
+
+        # Save session for reuse by other processes if running against Remote
+        try:
+            remote_url = os.environ.get("WEBDRIVER_REMOTE_URL")
+            if remote_url:
+                sess_file = os.environ.get("WEBDRIVER_SESSION_FILE", str((Path.cwd() / "logs" / "session" / "betburger.json")))
+                save_session(Path(sess_file), tm.driver, remote_url)
+        except Exception as se:
+            logger.warning("Could not persist WebDriver session (non-fatal)", error=str(se))
 
         logger.info("Smoke completed: login + /es/arbs + duplicated tabs", tabs=len(tm.driver.window_handles))
         # Keep the browser open for manual supervision; comment out to auto-close

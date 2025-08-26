@@ -1,18 +1,17 @@
 {
   "source": "betburger",
   "profile": "retabet_valuebets",
-  "timestamp_utc": "2025-08-25T20:46:37Z",
-  "sport": "football",
-  "match": "1 día No vs ibet 28 ago 10",
+  "timestamp_utc": "2025-08-26T01:08:36Z",
+  "match": "10 Opelka R. - Alcaraz C. M vs US Open",
   "market": "1X2",
-  "target_link": "/prices",
+  "target_link": "/es/main/scans",
   "selection_a": {
-    "bookmaker": "A Novibet 28 Ago 10",
-    "odd": 15.0
+    "bookmaker": "Una 25 Ago 20",
+    "odd": 10.0
   },
   "selection_b": {
-    "bookmaker": "A - Cyprus Eurobasket. Eurobasket",
-    "odd": 2025.0
+    "bookmaker": "Dvouhra To",
+    "odd": 33.5
   },
-  "roi_pct": 1.0
+  "roi_pct": 15.3
 }

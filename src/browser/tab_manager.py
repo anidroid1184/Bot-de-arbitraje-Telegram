@@ -5,6 +5,7 @@ Handles multiple tabs and profiles for Surebet and Betburger.
 import time
 import os
 from typing import List, Dict, Optional
+from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.by import By
@@ -13,6 +14,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException, TimeoutException
 
 from ..utils.logger import get_module_logger
+from .session_store import load_session, attach_to_session, save_session  # type: ignore
 from ..config.settings import BotConfig
 
 logger = get_module_logger("tab_manager")
@@ -73,14 +75,38 @@ class TabManager:
                 else:
                     logger.warning("Unsupported proxy type provided; skipping proxy configuration", proxy_type=self.config.proxy_type)
 
-            # If a remote WebDriver URL is provided, connect to it (e.g., Selenium Grid/Standalone in Docker)
+            # If a remote WebDriver URL is provided, try to ATTACH to existing session first
             remote_url = os.environ.get("WEBDRIVER_REMOTE_URL")
             if remote_url:
                 try:
-                    self.driver = webdriver.Remote(command_executor=remote_url, options=options)
-                    logger.info("Connected to remote Selenium Firefox session", remote_url=remote_url)
+                    # Optional session file path
+                    session_file = os.environ.get("WEBDRIVER_SESSION_FILE", str((Path.cwd() / "logs" / "session" / "betburger.json")))
+                    sess = load_session(session_file)
+                    if sess:
+                        exec_url, session_id = sess
+                        if exec_url and session_id:
+                            driver = attach_to_session(exec_url, session_id, options)
+                            if driver is not None:
+                                self.driver = driver  # type: ignore[assignment]
+                                logger.info("Reattached to existing Remote WebDriver session", executor_url=exec_url, session_id=session_id)
+                                return True
+
+                    # No session to attach or attach failed -> create new remote session
+                    # Try Selenium Wire Remote first if available
+                    try:
+                        from seleniumwire import webdriver as wire_webdriver  # type: ignore
+                        self.driver = wire_webdriver.Remote(command_executor=remote_url, options=options)
+                        logger.info("Connected (Selenium Wire) to remote Firefox session", remote_url=remote_url)
+                    except Exception:
+                        self.driver = webdriver.Remote(command_executor=remote_url, options=options)
+                        logger.info("Connected to remote Selenium Firefox session (no wire)", remote_url=remote_url)
+                    # Persist session for reuse
+                    try:
+                        save_session(Path(session_file), self.driver, remote_url)
+                    except Exception:
+                        pass
                     return True
-                except WebDriverException as re:
+                except Exception as re:
                     # Fall back to local Firefox if remote is not reachable
                     logger.warning(
                         "Remote WebDriver unavailable; falling back to local Firefox",
@@ -102,8 +128,22 @@ class TabManager:
                 except Exception as be:
                     logger.warning("Failed to set custom Firefox binary; falling back to default", error=str(be))
             
-            self.driver = webdriver.Firefox(options=options)
-            logger.info("Connected to local Firefox browser session")
+            # Prefer Selenium Wire locally if available, to enable request capture
+            try:
+                from seleniumwire import webdriver as wire_webdriver  # type: ignore
+                seleniumwire_options = {
+                    # Do not store large bodies; we only need request bodies
+                    'request_storage': 'memory',
+                    'verify_ssl': True,
+                    # Optionally ignore some hosts; keep empty for now to capture Betburger/Surebet
+                    # 'exclude_hosts': ['*.google-analytics.com']
+                }
+                self.driver = wire_webdriver.Firefox(options=options, seleniumwire_options=seleniumwire_options)
+                logger.info("Connected to local Firefox (Selenium Wire enabled)")
+            except Exception as we:
+                logger.warning("Selenium Wire not available; continuing without network capture", error=str(we))
+                self.driver = webdriver.Firefox(options=options)
+                logger.info("Connected to local Firefox browser session (no wire)")
             return True
             
         except WebDriverException as e:

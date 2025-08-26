@@ -39,6 +39,7 @@ from src.utils.telegram_notifier import TelegramNotifier  # type: ignore
 from src.utils.snapshots import write_snapshot, read_snapshot, compute_hash  # type: ignore
 from src.utils.command_controller import PauseController, BotCommandListener  # type: ignore
 from src.formatters.message_templates import EventCard, Selection, format_surebet_card  # type: ignore
+from src.snapshots.snapshot_manager import save_snapshot  # type: ignore
 from scripts.smoke_betburger_arbs_tabs import (  # type: ignore
     login_with_remember_me,
     duplicate_tabs_to as bb_duplicate_tabs_to,
@@ -151,7 +152,8 @@ def main() -> int:
             startup_notifier = TelegramNotifier()
             startup_notifier.send_text(
                 "[control] Bot conectado y en ejecución.\n"
-                "Comandos disponibles: /status, /pause, /start, /start-config, /finish-config"
+                "Comandos disponibles: /status, /pause, /start, /start-config, /finish-config\n"
+                "[learning] Aprendizaje habilitado: use /label <platform> <tab_id> <filter_key> para etiquetar el snapshot más reciente."
             )
         except Exception as e:
             logger.warning("Failed to send startup notification", error=str(e))
@@ -430,6 +432,23 @@ def main() -> int:
                 )
                 notifier.send_text(summary, chat_id=chat_id)
                 logger.info("Surebet tab completed", tab=tab_no, profile=profile_key, total=len(alerts))
+
+                # --- Save HTML snapshot in new snapshot_manager format to enable /label ---
+                try:
+                    cur_url = tm.driver.current_url or ""
+                    save_snapshot(
+                        platform="surebet",
+                        tab_id=tab_no,
+                        html=html_to_parse,
+                        meta={
+                            "profile": profile_key,
+                            "url": cur_url,
+                            "iteration": iteration,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                except Exception as se:
+                    logger.warning("Failed to save snapshot for learning", error=str(se), tab=tab_no)
 
             logger.info("Combined iteration completed", iteration=iteration)
             if not run_forever:

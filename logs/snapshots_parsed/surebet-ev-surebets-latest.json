@@ -1,18 +1,17 @@
 {
   "source": "surebet",
   "profile": "ev-surebets",
-  "timestamp_utc": "2025-08-25T20:25:32Z",
-  "sport": "football",
-  "match": "- Corners 1.86 vs bet 28 ago 14",
-  "market": "1X2",
-  "target_link": "/prices",
+  "timestamp_utc": "2025-08-25T21:15:15Z",
+  "sport": "basketball",
+  "match": "r esta apuesta segura Quejas Mercados incorrectos Equipos diferentes Las cuotas tienen valores diferentes E vs ento no encontrado Otro Bwin",
+  "target_link": "/",
   "selection_a": {
     "bookmaker": null,
-    "odd": 9.5
+    "odd": 74.5
   },
   "selection_b": {
     "bookmaker": null,
-    "odd": 1.86
+    "odd": 3.2
   },
-  "value_pct": 1.0
+  "value_pct": 2.93
 }

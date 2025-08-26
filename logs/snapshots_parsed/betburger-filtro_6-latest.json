@@ -1,18 +1,17 @@
 {
   "source": "betburger",
   "profile": "filtro_6",
-  "timestamp_utc": "2025-08-25T20:46:48Z",
-  "sport": "football",
-  "match": "Esports. Counter vs Strike 2. BLAST Open. Closed Qualification. Best of 3 maps AH1",
+  "timestamp_utc": "2025-08-26T01:09:03Z",
+  "match": "7 horas No vs ibet 27 ago 06",
   "market": "1X2",
-  "target_link": "/prices",
+  "target_link": "/es/main/scans",
   "selection_a": {
-    "bookmaker": "Esports. Counter-Strike",
-    "odd": 2.0
+    "bookmaker": "Horas Novibet 27 Ago 06",
+    "odd": 45.0
   },
   "selection_b": {
-    "bookmaker": "En. Closed Qualification. Best Of",
-    "odd": 3.0
+    "bookmaker": "Portugal Eurobasket. Eurobasket",
+    "odd": 2025.0
   },
-  "roi_pct": 1.0
+  "roi_pct": 16.02
 }

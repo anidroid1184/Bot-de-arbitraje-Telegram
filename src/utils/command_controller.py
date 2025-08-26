@@ -32,6 +32,11 @@ import requests
 
 from .logger import get_module_logger
 from .telegram_notifier import TelegramNotifier
+from ..pipeline.html_pipeline import PipelineRunner
+from ..snapshots.snapshot_manager import latest_per_tab
+from ..parsers import betburger_html as bbp
+from ..parsers import surebet_html as sbp
+from .hints_store import add_label as hints_add_label
 
 logger = get_module_logger("command_controller")
 
@@ -106,6 +111,7 @@ class BotCommandListener:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._notifier = TelegramNotifier()
+        self._pipeline = PipelineRunner()
 
         if not self._token:
             logger.warning("TELEGRAM_BOT_TOKEN missing; command listener disabled")
@@ -187,7 +193,12 @@ class BotCommandListener:
             self._notifier.send_text("[control] Bot pausado. Usa /start para reanudar.", chat_id=chat_id)
         elif cmd == "/start":
             self._controller.resume()
-            self._notifier.send_text("[control] Bot reanudado.", chat_id=chat_id)
+            self._notifier.send_text("[control] Bot reanudado. Iniciando procesamiento de snapshots...", chat_id=chat_id)
+            try:
+                # Dispara una corrida en background del pipeline HTML basado en snapshots
+                self._pipeline.start_once()
+            except Exception as e:
+                logger.warning("Failed to start HTML pipeline", error=str(e))
         elif cmd == "/start-config":
             self._controller.enable_config()
             self._notifier.send_text("[control] Modo configuración ACTIVADO. El bot no enviará alertas hasta /finish-config.", chat_id=chat_id)
@@ -203,6 +214,55 @@ class BotCommandListener:
                     self._notifier.send_text("[control] Estado: en ejecución (modo configuración ACTIVADO)", chat_id=chat_id)
                 else:
                     self._notifier.send_text("[control] Estado: en ejecución", chat_id=chat_id)
+        elif cmd == "/label":
+            # Usage: /label <platform> <tab_id> <filter_key>
+            try:
+                parts = text.split()
+                _, platform, tab_s, filter_key = parts[0], parts[1], parts[2], parts[3]
+                tab_id = int(tab_s)
+            except Exception:
+                self._notifier.send_text("Uso: /label <platform> <tab_id> <filter_key>", chat_id=chat_id)
+                return
+
+            # Find latest snapshot for that platform & tab
+            ref = None
+            for r in latest_per_tab(platform=platform):
+                if r.tab_id == tab_id:
+                    ref = r
+                    break
+            if not ref:
+                self._notifier.send_text(f"No hay snapshot para {platform} tab={tab_id}", chat_id=chat_id)
+                return
+
+            # Parse to extract signals
+            html = ""
+            try:
+                with open(ref.html_path, "r", encoding="utf-8", errors="ignore") as f:
+                    html = f.read()
+            except Exception:
+                pass
+            if not html:
+                self._notifier.send_text("Snapshot vacío o no legible", chat_id=chat_id)
+                return
+
+            # Determine parser
+            if platform == "betburger":
+                parsed = bbp.parse(html)
+            elif platform == "surebet":
+                parsed = sbp.parse(html)
+            else:
+                self._notifier.send_text(f"Plataforma desconocida: {platform}", chat_id=chat_id)
+                return
+
+            try:
+                hints_add_label(platform=platform, filter_key=filter_key, signals=parsed.signals)
+                self._notifier.send_text(
+                    f"[learning] Etiqueta guardada: {platform} tab={tab_id} -> {filter_key} (señales={len(parsed.signals)})",
+                    chat_id=chat_id,
+                )
+            except Exception as e:
+                logger.warning("/label failed", error=str(e))
+                self._notifier.send_text("No se pudo guardar la etiqueta.", chat_id=chat_id)
         else:
             # Ignore other messages
             return
