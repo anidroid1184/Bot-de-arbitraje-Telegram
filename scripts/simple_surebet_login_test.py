@@ -51,7 +51,7 @@ def main() -> int:
     
     # Configurar manager
     config = ConfigManager()
-    pm = PlaywrightManager(config, engine=engine)
+    pm = PlaywrightManager(config.bot)
     captures = []
     
     try:
