@@ -24,6 +24,7 @@ def fix_all_imports():
         (r'from src\.utils\.logger import get_module_logger', 'import structlog'),
         (r'from utils\.logger import get_module_logger', 'import structlog'),
         (r'logger = get_module_logger\(__name__\)', 'logger = structlog.get_logger(__name__)'),
+        (r'logger = get_module_logger\("[^"]*"\)', 'logger = structlog.get_logger(__name__)'),
         
         # Config específico
         (r'from \.\.config\.config import get_config', 'from config.config import get_config'),

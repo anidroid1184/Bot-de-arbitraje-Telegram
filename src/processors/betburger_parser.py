@@ -31,9 +31,9 @@ import datetime as dt
 import re
 from typing import Any, Dict, List, Optional
 
-from src.utils.logger import get_module_logger
+import structlog
 
-logger = get_module_logger("processors.betburger_parser")
+logger = structlog.get_logger(__name__)
 
 
 def _to_float(s: str) -> Optional[float]:
