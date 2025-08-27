@@ -76,6 +76,9 @@ class PlaywrightManager:
     def open_tabs(self, url: str, count: int = 6) -> list[Page]:
         assert self.context is not None, "Context not initialized. Call launch() first."
         pages: list[Page] = []
+        if count <= 0:
+            logger.info("Requested to open 0 tabs; skipping", url=url, requested=count)
+            return pages
         # First page
         p0 = self.context.new_page()
         p0.goto(url)
@@ -98,6 +101,9 @@ class PlaywrightManager:
         """
         assert self.browser is not None, "Browser not launched. Call launch() first."
         pages: list[Page] = []
+        if count <= 0:
+            logger.info("Requested to open 0 rotated tabs; skipping", url=url, requested=count)
+            return pages
         attempts = 0
         max_attempts = max_attempts or count * 4  # try a few extra proxies if some fail
         while len(pages) < count and attempts < max_attempts:
