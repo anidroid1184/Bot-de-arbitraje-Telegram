@@ -42,7 +42,8 @@ def main() -> int:
     engine = os.environ.get("PLAYWRIGHT_ENGINE", "chromium").lower()
     include_surebet = os.environ.get("SMOKE_INCLUDE_SUREBET", "0").lower() in ("1", "true", "yes", "on")
     surebet_url = os.environ.get("SUREBET_VALUEBETS_URL", "https://es.surebet.com/valuebets")
-    surebet_tabs = int(os.environ.get("SUREBET_TABS", "3"))
+    # Surebet: por defecto 1 pestaña para enfoque en una sola ventana de diagnóstico
+    surebet_tabs = int(os.environ.get("SUREBET_TABS", "1"))
     betburger_tabs = int(os.environ.get("BETBURGER_TABS", "3"))
 
     cfg_mgr = ConfigManager()
@@ -113,7 +114,8 @@ def main() -> int:
                 logger.info("Surebet route-all enabled", pages=len(pages_sb), routed_count=route_counter["count"]) 
 
         # keep for a short while so user can login manually if needed, while capturing
-        sleep_sec = int(os.environ.get("SMOKE_IDLE_SECONDS", "90"))
+        # Aumentar tiempo de idle para capturar tráfico y permitir copiar logs
+        sleep_sec = int(os.environ.get("SMOKE_IDLE_SECONDS", "180"))
         logger.info("Idle to allow login/manual checks (capturing pro_search)", seconds=sleep_sec)
 
         seen_filters: set[int] = set()
@@ -161,6 +163,13 @@ def main() -> int:
 
         # final summary
         logger.info("Capture finished", matched=total_matched, requests=total_req, responses=total_res, duration=int(time.time() - t0))
+        # Mantener la terminal abierta opcionalmente para copiar logs
+        if os.environ.get("SMOKE_HOLD", "0").lower() in ("1", "true", "yes", "on"):
+            try:
+                input("[SMOKE_HOLD] Presiona Enter para salir...")
+            except Exception:
+                # Entornos no interactivos (systemd) pueden fallar en input(); ignorar
+                pass
         if total_matched == 0:
             logger.warning("No pro_search traffic matched. If not logged in, Betburger may not emit pro_search. Try logging in (headed) and retry.")
         return 0
