@@ -12,8 +12,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import structlog
 
-from processors.betburger_processor import BetburgerProcessor
-from processors.surebet_processor import SurebetProcessor
+from processors.betburger_parser import BetburgerParser
+from processors.surebet_parser import SurebetParser
 from processors.arbitrage_data import ArbitrageData
 from config.channel_mapper import ChannelMapper
 from notifications.telegram_sender import TelegramSender
@@ -30,8 +30,8 @@ class RealtimeProcessor:
         self.telegram_sender = TelegramSender()
         
         # Initialize processors
-        self.betburger_processor = BetburgerProcessor()
-        self.surebet_processor = SurebetProcessor()
+        self.betburger_processor = BetburgerParser()
+        self.surebet_processor = SurebetParser()
         
         # Stats
         self.processed_count = 0
