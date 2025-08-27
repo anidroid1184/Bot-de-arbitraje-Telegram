@@ -15,7 +15,7 @@ import json
 # Cargar .env desde raíz del proyecto
 repo_root = Path(__file__).parent.parent
 env_path = repo_root / ".env"
-load_dotenv(env_path)
+load_dotenv(env_path, override=True)
 
 async def test_network_connectivity():
     """Prueba conectividad básica a internet y Telegram API."""
