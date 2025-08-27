@@ -20,6 +20,27 @@ services:
     working_dir: /app
     command: ["bash", "-lc", "echo 'selenium-bot ready'; tail -f /dev/null"]
 
+  playwright-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright-bot
+    container_name: playwright-bot
+    shm_size: 2g
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      # Proxy rotation config (optional)
+      - PROXY_POOL=${PROXY_POOL}
+      - PROXY_POOL_FILE=${PROXY_POOL_FILE}
+      - BOT_HEADLESS=${BOT_HEADLESS:-true}
+    volumes:
+      - ./proxies.txt:/app/proxies.txt:ro
+    working_dir: /app
+    command: ["bash", "-lc", "echo 'playwright-bot ready'; tail -f /dev/null"]
+
 volumes:
   firefox_profile:
+    driver: local
+  playwright_profile:
     driver: local

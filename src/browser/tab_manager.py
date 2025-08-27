@@ -12,10 +12,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException, TimeoutException
+from urllib.parse import urlparse
 
 from ..utils.logger import get_module_logger
 from .session_store import load_session, attach_to_session, save_session  # type: ignore
 from ..config.settings import BotConfig
+from ..proxy.pool import ProxyRotator
 
 logger = get_module_logger("tab_manager")
 
@@ -47,27 +49,58 @@ class TabManager:
                 options.add_argument("-private")
                 options.set_preference("browser.privatebrowsing.autostart", True)
 
-            # Apply optional proxy configuration via Firefox preferences
-            # We use prefs instead of Selenium Proxy object for better compatibility with Remote sessions.
-            if getattr(self.config, "proxy_type", None) and getattr(self.config, "proxy_host", None) and getattr(self.config, "proxy_port", None):
+            # Proxy configuration: prefer rotating pool if available, else fallback to static config
+            proxy_rotator = ProxyRotator()
+            proxy_url = proxy_rotator.next_proxy_url()
+
+            def apply_firefox_proxy_prefs_from_url(url: Optional[str]) -> None:
+                if not url:
+                    return
+                parsed = urlparse(url)
+                scheme = (parsed.scheme or "").lower()
+                host = parsed.hostname
+                port = parsed.port
+                if not host or not port:
+                    logger.warning("Proxy URL missing host/port; skipping Firefox prefs", proxy=url)
+                    return
+                options.set_preference("network.proxy.type", 1)
+                if scheme in ("socks", "socks5"):
+                    options.set_preference("network.proxy.socks", host)
+                    options.set_preference("network.proxy.socks_port", int(port))
+                    options.set_preference("network.proxy.socks_version", 5)
+                    options.set_preference("network.proxy.socks_remote_dns", True)
+                    # Firefox supports SOCKS auth via prefs
+                    if parsed.username:
+                        options.set_preference("network.proxy.socks_username", parsed.username)
+                    if parsed.password:
+                        options.set_preference("network.proxy.socks_password", parsed.password)
+                else:
+                    # Treat as HTTP/HTTPS
+                    options.set_preference("network.proxy.http", host)
+                    options.set_preference("network.proxy.http_port", int(port))
+                    options.set_preference("network.proxy.ssl", host)
+                    options.set_preference("network.proxy.ssl_port", int(port))
+                    options.set_preference("network.proxy.socks_remote_dns", True)
+
+            if proxy_url:
+                logger.info("Using proxy from pool", proxy=proxy_url)
+                apply_firefox_proxy_prefs_from_url(proxy_url)
+            elif getattr(self.config, "proxy_type", None) and getattr(self.config, "proxy_host", None) and getattr(self.config, "proxy_port", None):
                 ptype = (self.config.proxy_type or "").lower()
                 host = self.config.proxy_host
                 port = int(self.config.proxy_port)
-                # 1 = Manual proxy config
                 options.set_preference("network.proxy.type", 1)
                 if ptype == "http":
                     options.set_preference("network.proxy.http", host)
                     options.set_preference("network.proxy.http_port", port)
                     options.set_preference("network.proxy.ssl", host)
                     options.set_preference("network.proxy.ssl_port", port)
-                    # Also set for DNS over proxy if desired
                     options.set_preference("network.proxy.socks_remote_dns", True)
                 elif ptype in ("socks", "socks5"):
                     options.set_preference("network.proxy.socks", host)
                     options.set_preference("network.proxy.socks_port", port)
                     options.set_preference("network.proxy.socks_version", 5)
                     options.set_preference("network.proxy.socks_remote_dns", True)
-                    # Optional SOCKS auth
                     if getattr(self.config, "proxy_username", None):
                         options.set_preference("network.proxy.socks_username", self.config.proxy_username)
                     if getattr(self.config, "proxy_password", None):
@@ -95,8 +128,15 @@ class TabManager:
                     # Try Selenium Wire Remote first if available
                     try:
                         from seleniumwire import webdriver as wire_webdriver  # type: ignore
-                        self.driver = wire_webdriver.Remote(command_executor=remote_url, options=options)
-                        logger.info("Connected (Selenium Wire) to remote Firefox session", remote_url=remote_url)
+                        seleniumwire_options = {
+                            'request_storage': 'memory',
+                            'verify_ssl': True,
+                        }
+                        # If proxy pool provided, set upstream proxy for Selenium Wire (handles auth)
+                        if proxy_url:
+                            seleniumwire_options['proxy'] = {'http': proxy_url, 'https': proxy_url}
+                        self.driver = wire_webdriver.Remote(command_executor=remote_url, options=options, seleniumwire_options=seleniumwire_options)
+                        logger.info("Connected (Selenium Wire) to remote Firefox session", remote_url=remote_url, proxy=proxy_url)
                     except Exception:
                         self.driver = webdriver.Remote(command_executor=remote_url, options=options)
                         logger.info("Connected to remote Selenium Firefox session (no wire)", remote_url=remote_url)
@@ -132,14 +172,13 @@ class TabManager:
             try:
                 from seleniumwire import webdriver as wire_webdriver  # type: ignore
                 seleniumwire_options = {
-                    # Do not store large bodies; we only need request bodies
                     'request_storage': 'memory',
                     'verify_ssl': True,
-                    # Optionally ignore some hosts; keep empty for now to capture Betburger/Surebet
-                    # 'exclude_hosts': ['*.google-analytics.com']
                 }
+                if proxy_url:
+                    seleniumwire_options['proxy'] = {'http': proxy_url, 'https': proxy_url}
                 self.driver = wire_webdriver.Firefox(options=options, seleniumwire_options=seleniumwire_options)
-                logger.info("Connected to local Firefox (Selenium Wire enabled)")
+                logger.info("Connected to local Firefox (Selenium Wire enabled)", proxy=proxy_url)
             except Exception as we:
                 logger.warning("Selenium Wire not available; continuing without network capture", error=str(we))
                 self.driver = webdriver.Firefox(options=options)

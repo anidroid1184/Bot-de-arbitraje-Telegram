@@ -55,3 +55,4 @@ config/channels.local.yaml
 # respaldos
 respaldo/
 config.yml
+proxies.txt
