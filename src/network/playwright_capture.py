@@ -17,10 +17,9 @@ import re
 from typing import Any, Dict, List, Optional
 from playwright.sync_api import BrowserContext, Page, Request, Response, WebSocket  # type: ignore
 
-from ..utils.logger import get_module_logger
+import structlog
 
-logger = get_module_logger("playwright_capture")
-
+logger = structlog.get_logger(__name__)
 
 PRO_SEARCH_REGEX = re.compile(r"/api/(?:v\d+/)?pro_search", re.IGNORECASE)
 
