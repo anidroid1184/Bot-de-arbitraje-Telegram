@@ -20,7 +20,7 @@ from notifications.telegram_sender import TelegramSender
 
 # Load environment from project root
 env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(env_path)
+load_dotenv(env_path, override=True)
 
 
 async def test_channel_connectivity():

@@ -27,7 +27,7 @@ from pipeline.realtime_processor import RealtimeProcessor
 import structlog
 
 # Load environment
-load_dotenv()
+load_dotenv(env_path, override=True)
 
 logger = structlog.get_logger(__name__)
 
