@@ -31,8 +31,8 @@ from telegram.constants import ParseMode
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
-PREFERRED_CONFIG = os.path.join(REPO_ROOT, "src", "config", "config.yml")
-FALLBACK_CONFIG = os.path.join(REPO_ROOT, "config", "channels.yaml")
+PREFERRED_CONFIG = os.path.join(REPO_ROOT, "src", "config", "config-configurada.yml")
+FALLBACK_CONFIG = os.path.join(REPO_ROOT, "deprecated", "config-configurada.yml")
 
 
 def load_env() -> None:
