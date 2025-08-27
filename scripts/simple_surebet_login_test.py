@@ -56,7 +56,7 @@ def main() -> int:
     
     try:
         print("🚀 Iniciando Playwright Manager...")
-        pm.start()
+        pm.launch(engine=engine)
         print("✅ Manager iniciado")
         
         if per_tab:
