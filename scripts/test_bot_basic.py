@@ -15,7 +15,7 @@ from telegram import Bot
 
 # Load .env from project root
 env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(env_path)
+load_dotenv(env_path, override=True)
 
 async def test_bot():
     """Test básico del bot."""

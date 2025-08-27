@@ -40,7 +40,7 @@ def load_env() -> None:
     repo_root = os.path.dirname(os.path.dirname(__file__))
     env_path = os.path.join(repo_root, ".env")
     if os.path.exists(env_path):
-        load_dotenv(env_path)
+        load_dotenv(env_path, override=True)
 
 
 def _pick_config_path() -> str:
