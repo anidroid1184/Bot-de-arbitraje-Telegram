@@ -1,189 +1,160 @@
 #!/usr/bin/env python3
-"""
-Script simple para probar login en Surebet con captura de requests
-Usa Chromium en servidor Linux con GUI para interacción manual
-"""
+"""Smoke test para Surebet: interceptar requests usando lógica del smoke test existente"""
 
 import os
+import re
 import sys
 import time
-import json
-import re
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
-from playwright.sync_api import sync_playwright, BrowserContext, Page, Request, Response
+# Bootstrap sys.path
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.abspath(os.path.join(_this_dir, os.pardir))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
+from src.browser.playwright_manager import PlaywrightManager
+from src.network.playwright_capture import PlaywrightCapture
+from src.config.settings import ConfigManager
+from src.utils.logger import get_module_logger
 
-class SimplePlaywrightCapture:
-    """Captura simplificada de requests sin dependencias externas"""
-    
-    def __init__(self, target: BrowserContext | Page, url_patterns: Optional[list[str]] = None):
-        self.target = target
-        self.url_patterns = url_patterns or []
-        self.buffer: List[Dict[str, Any]] = []
-        
-    def _matches_pattern(self, url: str) -> bool:
-        """Verifica si la URL coincide con algún patrón"""
-        if not self.url_patterns:
-            return True
-        return any(re.search(pattern, url, re.IGNORECASE) for pattern in self.url_patterns)
-    
-    def _on_request(self, request: Request):
-        """Maneja requests interceptados"""
-        if self._matches_pattern(request.url):
-            data = {
-                "type": "request",
-                "url": request.url,
-                "method": request.method,
-                "headers": dict(request.headers),
-                "timestamp": time.time()
-            }
-            # Intentar extraer JSON del body
-            try:
-                if request.post_data:
-                    data["json"] = json.loads(request.post_data)
-            except (json.JSONDecodeError, TypeError):
-                pass
-            self.buffer.append(data)
-    
-    def _on_response(self, response: Response):
-        """Maneja responses interceptados"""
-        if self._matches_pattern(response.url):
-            data = {
-                "type": "response",
-                "url": response.url,
-                "status": response.status,
-                "headers": dict(response.headers),
-                "timestamp": time.time()
-            }
-            # Intentar extraer JSON del body
-            try:
-                if response.headers.get("content-type", "").startswith("application/json"):
-                    data["json"] = response.json()
-            except Exception:
-                pass
-            self.buffer.append(data)
-    
-    def start(self):
-        """Inicia la captura de requests/responses"""
-        self.target.on("request", self._on_request)
-        self.target.on("response", self._on_response)
-    
-    def flush(self) -> List[Dict[str, Any]]:
-        """Retorna y limpia el buffer de datos capturados"""
-        data = self.buffer.copy()
-        self.buffer.clear()
-        return data
+logger = get_module_logger("surebet_smoke")
 
 
-def main():
-    """Abrir Chromium en login de Surebet con captura de requests"""
-    url = "https://es.surebet.com/users/sign_in"
+def main() -> int:
+    """Smoke test solo para Surebet con captura de requests"""
+    
+    # URLs de Surebet
+    sb_base = os.environ.get("SUREBET_BASE_URL", "https://es.surebet.com").rstrip("/")
+    sb_login_url = os.environ.get("SUREBET_LOGIN_URL", f"{sb_base}/users/sign_in")
+    sb_start_url = os.environ.get("SUREBET_START_URL", f"{sb_base}/valuebets")
     
     # Patrones para capturar requests de Surebet
-    surebet_patterns = [r"/api/", r"/valuebets", r"/surebets", r"/arbs", r"/users/"]
+    sb_pattern_env = os.environ.get("SUREBET_PATTERNS", "").strip()
+    sb_patterns = [p for p in re.split(r"[,|]", sb_pattern_env) if p] if sb_pattern_env else [r"/valuebets", r"/api/", r"/arbs", r"/surebets", r"/users/"]
+    
+    # Configuración
+    engine = (os.environ.get("PLAYWRIGHT_ENGINE") or os.environ.get("BROWSER") or "chromium").lower()
+    per_tab = False  # Forzar contexto compartido para una sola tab
+    surebet_tabs = 1  # Solo una tab
     
     print("=" * 60)
-    print("🚀 INICIANDO TEST DE SUREBET LOGIN")
+    print("🎯 SUREBET SMOKE TEST - INTERCEPTANDO REQUESTS")
     print("=" * 60)
-    print(f"📍 URL objetivo: {url}")
-    print(f"🔍 Patrones de captura: {surebet_patterns}")
+    print(f"🌐 Login URL: {sb_login_url}")
+    print(f"🏠 Start URL: {sb_start_url}")
+    print(f"🔍 Patrones: {sb_patterns}")
+    print(f"🔧 Engine: {engine}")
+    print(f"📑 Tabs: {surebet_tabs}")
+    print(f"🔄 Per-tab rotation: {per_tab}")
     print()
     
-    with sync_playwright() as p:
-        print("🔧 Iniciando Playwright...")
+    # Configurar manager
+    config = ConfigManager()
+    pm = PlaywrightManager(config, engine=engine)
+    captures = []
+    
+    try:
+        print("🚀 Iniciando Playwright Manager...")
+        pm.start()
+        print("✅ Manager iniciado")
         
-        # Chromium en servidor Linux con args adicionales
-        print("🌐 Lanzando Chromium con argumentos para servidor Linux...")
-        browser = p.chromium.launch(
-            headless=False,
-            args=[
-                "--no-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-web-security",
-                "--disable-features=VizDisplayCompositor"
-            ]
-        )
-        print("✅ Chromium lanzado exitosamente")
+        if per_tab:
+            print(f"📑 Abriendo {surebet_tabs} tabs con rotación de contexto...")
+            pages = pm.open_tabs_with_context_rotation(sb_start_url, count=surebet_tabs)
+            print(f"✅ {len(pages)} tabs abiertas")
+            
+            # Captura por contexto rotado
+            for idx, ctx in enumerate(pm.rotated_contexts()):
+                print(f"🎯 Configurando captura para contexto {idx}...")
+                cap = PlaywrightCapture(ctx, url_patterns=sb_patterns)
+                cap.start()
+                captures.append(cap)
+                print(f"✅ Captura {idx} iniciada")
+        else:
+            print("🎯 Configurando captura en contexto compartido...")
+            assert pm.context is not None
+            cap = PlaywrightCapture(pm.context, url_patterns=sb_patterns)
+            cap.start()
+            captures.append(cap)
+            print("✅ Captura iniciada")
+            
+            print(f"📑 Abriendo {surebet_tabs} tabs...")
+            pages = pm.open_tabs(sb_start_url, count=surebet_tabs)
+            print(f"✅ {len(pages)} tabs abiertas")
         
-        print("📄 Creando contexto de navegación...")
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-        print("✅ Contexto creado")
+        print("\n🔍 INTERCEPTANDO REQUESTS EN TIEMPO REAL")
+        print("=" * 50)
+        print("Navega manualmente, haz login, usa filtros...")
+        print("Los requests se mostrarán automáticamente")
+        print("Presiona Ctrl+C para salir\n")
         
-        # Configurar captura de requests ANTES de crear la página
-        print("🎯 Configurando captura de requests...")
-        try:
-            capture = SimplePlaywrightCapture(context, url_patterns=surebet_patterns)
-            capture.start()
-            print("✅ Captura de requests iniciada")
-        except Exception as e:
-            print(f"❌ Error configurando captura: {e}")
-            return 1
-        
-        print("📱 Creando nueva página...")
-        page = context.new_page()
-        print("✅ Página creada")
-        
-        # Navegar a login con timeout largo y manejo de errores
-        print(f"🚀 Navegando a: {url}")
-        navigation_success = False
-        
-        try:
-            print("   ⏳ Intentando navegación con networkidle...")
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            print(f"   ✅ Página cargada con networkidle: {page.url}")
-            navigation_success = True
-        except Exception as e:
-            print(f"   ❌ Error con networkidle: {type(e).__name__}: {e}")
-            print("   🔄 Intentando navegación básica...")
-            try:
-                page.goto(url, timeout=30000)
-                final_url = page.url
-                print(f"   ✅ Página cargada (básica): {final_url}")
-                if final_url != "about:blank":
-                    navigation_success = True
-                else:
-                    print("   ⚠️  Página quedó en about:blank")
-            except Exception as e2:
-                print(f"   ❌ Error crítico: {type(e2).__name__}: {e2}")
-                print(f"   📍 URL actual: {page.url}")
-                print("   🔧 Manteniendo navegador abierto para diagnóstico manual...")
-        
-        print(f"\n📊 Estado final:")
-        print(f"   URL actual: {page.url}")
-        print(f"   Navegación exitosa: {navigation_success}")
-        print(f"   Título: {page.title()}")
-        print("Puedes hacer login manualmente y navegar...")
-        print("Los requests se mostrarán en tiempo real")
-        print("Presiona Ctrl+C para cerrar\n")
+        # Loop principal de captura (igual que Betburger smoke test)
+        t0 = time.time()
+        last_summary = t0
+        total_matched = total_req = total_res = 0
+        seen_filters = set()
         
         try:
-            # Loop para mostrar requests capturados
             while True:
-                time.sleep(2)
-                data = capture.flush()
-                for rec in data:
-                    rtype = rec.get("type", "?")
-                    url_req = rec.get("url", "")
-                    method = rec.get("method", "")
-                    status = rec.get("status", "")
-                    
-                    if rtype == "request":
-                        print(f"[REQ] {method} {url_req}")
-                        if rec.get("json"):
-                            print(f"      JSON: {rec['json']}")
-                    elif rtype == "response":
-                        print(f"[RES] {status} {url_req}")
-                        if rec.get("json"):
-                            print(f"      JSON: {rec['json']}")
+                # Procesar capturas (solo una captura ya que es una tab)
+                for cap in captures:
+                    data = cap.flush()
+                    for rec in data:
+                        rtype = rec.get("type")
+                        url = rec.get("url")
+                        if not url:
+                            continue
+                        total_matched += 1
                         
+                        if rtype == "request":
+                            total_req += 1
+                            method = rec.get("method", "?")
+                            has_json = isinstance(rec.get("json"), dict)
+                            logger.info("[capture] request", method=method, url=url, json=has_json)
+                            if has_json:
+                                j = rec["json"]
+                                # Buscar filter_id en requests de Surebet
+                                fid = j.get("filter_id") or j.get("filterId") or j.get("id")
+                                if isinstance(fid, (int, str)) and fid not in seen_filters:
+                                    seen_filters.add(fid)
+                                    logger.info("Detected Surebet filter_id", filter_id=fid, json_keys=list(j.keys()))
+                        elif rtype == "response":
+                            total_res += 1
+                            status = rec.get("status")
+                            logger.info("[capture] response", status=status, url=url)
+                
+                # Resumen periódico cada ~10s
+                now = time.time()
+                if now - last_summary >= 10:
+                    logger.info("Capture summary", matched=total_matched, requests=total_req, responses=total_res, elapsed=int(now - t0))
+                    last_summary = now
+                time.sleep(1.0)
+                                
         except KeyboardInterrupt:
-            print("\n🔚 Cerrando navegador")
-        finally:
-            browser.close()
+            print("\n🔚 Cerrando smoke test...")
+        
+        # Resumen final
+        logger.info("Capture finished", matched=total_matched, requests=total_req, responses=total_res, duration=int(time.time() - t0))
+        if total_matched == 0:
+            logger.warning("No Surebet traffic matched. Try logging in and using filters.")
+        
+        # Mantener terminal abierta opcionalmente
+        if os.environ.get("SMOKE_HOLD", "0").lower() in ("1", "true", "yes", "on"):
+            try:
+                input("[SMOKE_HOLD] Presiona Enter para salir...")
+            except Exception:
+                pass
+            
+    except Exception as e:
+        logger.error("Error en smoke test", error=str(e))
+        return 1
+    finally:
+        pm.close()
+        print("✅ Playwright Manager cerrado")
+    
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
