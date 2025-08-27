@@ -33,7 +33,7 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 
-logger = structlog.get_logger(__name__)
+logger = structlog.get_logger("processors.betburger_parser")
 
 
 def _to_float(s: str) -> Optional[float]:
