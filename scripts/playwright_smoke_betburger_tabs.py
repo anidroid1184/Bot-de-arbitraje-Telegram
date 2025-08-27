@@ -30,6 +30,7 @@ from src.browser.playwright_manager import PlaywrightManager
 from src.network.playwright_capture import PlaywrightCapture
 from src.config.settings import ConfigManager
 from src.utils.logger import get_module_logger
+from playwright.sync_api import Route, Request  # type: ignore
 
 logger = get_module_logger("playwright_smoke")
 
@@ -42,9 +43,12 @@ def main() -> int:
     engine = os.environ.get("PLAYWRIGHT_ENGINE", "chromium").lower()
     include_surebet = os.environ.get("SMOKE_INCLUDE_SUREBET", "0").lower() in ("1", "true", "yes", "on")
     surebet_url = os.environ.get("SUREBET_VALUEBETS_URL", "https://es.surebet.com/valuebets")
+    # Permitir iniciar sesión más rápido si se proporciona URL de login
+    surebet_start_url = os.environ.get("SUREBET_START_URL", surebet_url)
     # Surebet: por defecto 1 pestaña para enfoque en una sola ventana de diagnóstico
     surebet_tabs = int(os.environ.get("SUREBET_TABS", "1"))
-    betburger_tabs = int(os.environ.get("BETBURGER_TABS", "3"))
+    # Por ahora no abrimos Betburger en este smoke enfocado a Surebet
+    betburger_tabs = int(os.environ.get("BETBURGER_TABS", "0"))
 
     cfg_mgr = ConfigManager()
     pm = PlaywrightManager(cfg_mgr.bot)
@@ -86,7 +90,7 @@ def main() -> int:
             sb_pattern_env = os.environ.get("SUREBET_PATTERNS", "").strip()
             sb_patterns = [p for p in re.split(r"[,|]", sb_pattern_env) if p] if sb_pattern_env else [r"/valuebets", r"/api/", r"/arbs", r"/surebets"]
             if per_tab:
-                pages_sb = pm.open_tabs_with_context_rotation(surebet_url, count=surebet_tabs)
+                pages_sb = pm.open_tabs_with_context_rotation(surebet_start_url, count=surebet_tabs)
                 logger.info("Surebet tabs opened (per_tab rotation)", url=surebet_url, count=len(pages_sb))
                 # Attach one capture per rotated context (after rotation, best-effort for per-tab mode)
                 for idx, ctx in enumerate(pm.rotated_contexts()[-len(pages_sb):]):
@@ -99,7 +103,7 @@ def main() -> int:
                 cap_sb = PlaywrightCapture(pm.context, url_patterns=sb_patterns)
                 cap_sb.start()
                 captures.append(cap_sb)
-                pages_sb = pm.open_tabs(surebet_url, count=surebet_tabs)
+                pages_sb = pm.open_tabs(surebet_start_url, count=surebet_tabs)
                 logger.info("Surebet tabs opened", url=surebet_url, count=len(pages_sb))
 
             # Optional route-all for Surebet pages
