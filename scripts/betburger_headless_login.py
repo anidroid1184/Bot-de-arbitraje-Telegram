@@ -118,9 +118,12 @@ def wait_for_login_success(page, login_url: str, arbs_url: str, timeout_ms: int 
         return False
 
 
-def do_login(email: str, password: str, base_url: str, arbs_path: str, user_data_dir: Path, headless: bool = True) -> int:
+def do_login(username_or_email: str, password: str, base_url: str, arbs_path: str, user_data_dir: Path, headless: bool = True, explicit_login_url: Optional[str] = None) -> int:
     arbs_url = base_url.rstrip("/") + arbs_path
-    login_urls = guess_login_urls(base_url.rstrip("/"))
+    if explicit_login_url:
+        login_urls = [explicit_login_url]
+    else:
+        login_urls = guess_login_urls(base_url.rstrip("/"))
 
     with sync_playwright() as p:
         log("info", "Launching persistent context", engine="chromium", headless=headless, user_data_dir=str(user_data_dir))
@@ -154,7 +157,8 @@ def do_login(email: str, password: str, base_url: str, arbs_path: str, user_data
 
             # Fill and submit
             log("info", "Filling credentials")
-            page.fill('input[name="email"]', email)
+            # Betburger typically uses email; project uses BETBURGER_USERNAME as env name.
+            page.fill('input[name="email"]', username_or_email)
             page.fill('input[name="password"]', password)
 
             # Try different submit strategies
@@ -202,20 +206,26 @@ def main() -> int:
     env_path = project_root / ".env"
     load_env_file(env_path)
 
+    # Align with existing .env.example: BETBURGER_USERNAME + BETBURGER_PASSWORD.
+    # Fallbacks preserved: BETBURGER_EMAIL if user prefers that name.
+    username = os.environ.get("BETBURGER_USERNAME", "").strip()
     email = os.environ.get("BETBURGER_EMAIL", "").strip()
+    login_identity = username or email
+
     password = os.environ.get("BETBURGER_PASSWORD", "").strip()
     base = os.environ.get("BETBURGER_BASE", "https://betburger.com").strip()
     arbs_path = os.environ.get("BETBURGER_PATH", "/es/arbs").strip()
+    explicit_login_url = os.environ.get("BETBURGER_LOGIN_URL", "").strip() or None
 
-    if not email or not password:
-        log("error", "Missing BETBURGER_EMAIL or BETBURGER_PASSWORD in environment/.env")
+    if not login_identity or not password:
+        log("error", "Missing BETBURGER_USERNAME/BETBURGER_EMAIL or BETBURGER_PASSWORD in environment/.env")
         return 1
 
     user_data_dir = project_root / "logs" / "playwright_profile"
     user_data_dir.mkdir(parents=True, exist_ok=True)
 
     headless = env_bool("BOT_HEADLESS", True)
-    code = do_login(email=email, password=password, base_url=base, arbs_path=arbs_path, user_data_dir=user_data_dir, headless=headless)
+    code = do_login(username_or_email=login_identity, password=password, base_url=base, arbs_path=arbs_path, user_data_dir=user_data_dir, headless=headless, explicit_login_url=explicit_login_url)
     return code
 
 
