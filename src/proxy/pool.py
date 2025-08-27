@@ -59,11 +59,29 @@ def load_proxy_pool() -> list[str]:
         if x not in seen:
             seen.add(x)
             uniq.append(x)
-    if not uniq:
-        logger.warning("Proxy pool is empty; running without proxy")
+
+    # Optional scheme filtering (e.g., only http/https to avoid unstable socks5)
+    allowed_raw = os.environ.get("PROXY_ALLOWED_SCHEMES", "").strip()
+    allowed: list[str]
+    if allowed_raw:
+        allowed = [s.strip().lower() for s in allowed_raw.replace(";", ",").split(",") if s.strip()]
     else:
-        logger.info("Loaded proxy pool", count=len(uniq))
-    return uniq
+        allowed = []
+
+    filtered: list[str] = []
+    if allowed:
+        for u in uniq:
+            scheme = u.split("://", 1)[0].lower() if "://" in u else ""
+            if scheme in allowed:
+                filtered.append(u)
+        logger.info("Loaded proxy pool (filtered)", total=len(uniq), allowed=",".join(allowed), count=len(filtered))
+    else:
+        filtered = uniq
+        if not filtered:
+            logger.warning("Proxy pool is empty; running without proxy")
+        else:
+            logger.info("Loaded proxy pool", count=len(filtered))
+    return filtered
 
 
 class ProxyRotator:

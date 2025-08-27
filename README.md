@@ -3,7 +3,7 @@ Bot para scraping de alertas de arbitraje (Betburger / Surebet) ejecutado localm
 
 ## Requisitos
 - Python 3.11+
-- Firefox instalado (Selenium Manager descargará geckodriver automáticamente)
+- Playwright instalado con navegadores (ver Quickstart Linux)
 
 ## Estructura relevante
 - `src/`: código fuente del bot.
@@ -42,6 +42,45 @@ py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
+
+## Quickstart (Linux, sin proxy)
+```bash
+# 1) Clonar y preparar entorno
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -r requirements.txt
+
+# 2) Instalar navegadores de Playwright
+python3 -m playwright install chromium
+
+# 3) Configurar .env (mínimo para smoke)
+cp .env.example .env
+# Edita .env y asegúrate de NO definir PROXY_POOL_FILE para correr sin proxy
+# Recomendado para smoke rápido:
+# BOT_HEADLESS=true
+# SMOKE_PER_TAB=0
+# BETBURGER_TABS=2
+# SUREBET_TABS=2
+# SMOKE_IDLE_SECONDS=45
+
+# 4) Ejecutar smoke test (Betburger; Surebet opcional)
+python3 -m scripts.playwright_smoke_betburger_tabs
+```
+
+### Qué esperar en logs
+- "Launching Playwright ... proxy=None ..." (sin proxy)
+- "Tabs opened ... requested=2 count=2"
+- Posibles detecciones de `filter_id` en tráfico Betburger (1218070 Codere, 1218528 Betfair).
+
+## Troubleshooting
+- "Page.goto: net::ERR_PROXY_CONNECTION_FAILED / net::ERR_TIMED_OUT":
+  - Indica proxies inestables. Corre sin proxy (no definas `PROXY_POOL_FILE`), o usa un proxy de pago estable.
+  - Si quieres filtrar proxies por esquema: `PROXY_ALLOWED_SCHEMES=http,https`.
+- "No browser found" o Playwright no abre Chromium:
+  - Ejecuta `python3 -m playwright install chromium` dentro del venv.
+- Cuelgues al cerrar con Ctrl+C:
+  - Espera unos segundos a que Playwright cierre contextos. Vuelve a ejecutar el comando.
 
 ## Ejecución rápida (local)
 ```bash

@@ -8,8 +8,8 @@ __pycache__/
 # Envs
 .env
 .env.local
-.env.*
-!.env.example
+# .env.*
+# !.env.example
 .venv/
 
 # Logs & reports
