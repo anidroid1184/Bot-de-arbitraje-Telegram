@@ -18,8 +18,9 @@ from dotenv import load_dotenv
 from config.channel_mapper import ChannelMapper
 from notifications.telegram_sender import TelegramSender
 
-# Load environment
-load_dotenv()
+# Load environment from project root
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
 
 
 async def test_channel_connectivity():

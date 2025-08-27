@@ -13,11 +13,18 @@ from dotenv import load_dotenv
 import telegram
 from telegram import Bot
 
-load_dotenv()
+# Load .env from project root
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
 
 async def test_bot():
     """Test básico del bot."""
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    
+    print(f"🔍 Debug info:")
+    print(f"   .env path: {env_path}")
+    print(f"   .env exists: {env_path.exists()}")
+    print(f"   Token found: {'Yes' if token else 'No'}")
     
     if not token:
         print("❌ No token found")
