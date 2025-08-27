@@ -48,12 +48,15 @@ class PlaywrightManager:
             # When using launch_persistent_context, the return is actually a Context
             self.context = self.browser  # type: ignore[assignment]
             self.browser = self.context.browser
+            self._apply_performance_tweaks(self.context)
         elif engine == "webkit":
             self.browser = self._pl.webkit.launch(headless=headless)
             self.context = self.browser.new_context(proxy=proxy, user_agent=self._user_agent())
+            self._apply_performance_tweaks(self.context)
         else:  # chromium default
             self.browser = self._pl.chromium.launch(headless=headless)
             self.context = self.browser.new_context(proxy=proxy, user_agent=self._user_agent())
+            self._apply_performance_tweaks(self.context)
 
         return self.browser, self.context
 
@@ -81,11 +84,11 @@ class PlaywrightManager:
             return pages
         # First page
         p0 = self.context.new_page()
-        p0.goto(url)
+        p0.goto(url, wait_until="domcontentloaded", timeout=8000)
         pages.append(p0)
         for _ in range(count - 1):
             p = self.context.new_page()
-            p.goto(url)
+            p.goto(url, wait_until="domcontentloaded", timeout=8000)
             pages.append(p)
         logger.info("Opened tabs", count=len(pages), url=url)
         return pages
@@ -179,3 +182,40 @@ class PlaywrightManager:
         por contexto. No modificar desde fuera.
         """
         return list(self._rotated_contexts)
+
+    def _apply_performance_tweaks(self, ctx: BrowserContext) -> None:
+        """Apply default timeouts and optional heavy-resource blocking to speed up page loads.
+
+        Controlled by environment variables:
+          - BLOCK_HEAVY_RESOURCES=1|0 (default 0)
+          - BLOCK_RESOURCE_TYPES=comma-separated list (default: images,stylesheet,media,font)
+        """
+        try:
+            # Shorter defaults to fail fast on slow resources
+            ctx.set_default_navigation_timeout(10000)
+            ctx.set_default_timeout(10000)
+        except Exception:
+            pass
+
+        import os
+        should_block = os.environ.get("BLOCK_HEAVY_RESOURCES", "0").lower() in ("1", "true", "yes", "on")
+        if not should_block:
+            return
+
+        raw = os.environ.get("BLOCK_RESOURCE_TYPES", "images,stylesheet,media,font")
+        types = {t.strip().lower() for t in raw.split(",") if t.strip()}
+
+        def _maybe_abort(route, request) -> None:  # type: ignore
+            try:
+                rtype = request.resource_type
+                if rtype and rtype.lower() in types:
+                    return route.abort()
+            except Exception:
+                pass
+            return route.continue_()
+
+        try:
+            ctx.route("**/*", _maybe_abort)
+            logger.info("Heavy resources blocking enabled", types=sorted(types))
+        except Exception:
+            pass
