@@ -11,11 +11,11 @@ from typing import Optional, Tuple
 
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page  # type: ignore
 
-from ..utils.logger import get_module_logger
-from ..config.settings import BotConfig
-from ..proxy.pool import ProxyRotator
+import structlog
+from config.settings import BotConfig
+from proxy.pool import ProxyRotator
 
-logger = get_module_logger("playwright_manager")
+logger = structlog.get_logger(__name__)
 
 
 class PlaywrightManager:
