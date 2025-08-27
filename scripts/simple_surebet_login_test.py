@@ -26,9 +26,19 @@ def main():
     print("🔍 Capturando requests de Surebet...")
     
     with sync_playwright() as p:
-        # Chromium en servidor Linux
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
+        # Chromium en servidor Linux con args adicionales
+        browser = p.chromium.launch(
+            headless=False,
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-web-security",
+                "--disable-features=VizDisplayCompositor"
+            ]
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
         
         # Configurar captura de requests ANTES de crear la página
         capture = PlaywrightCapture(context, url_patterns=surebet_patterns)
