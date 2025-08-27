@@ -14,9 +14,9 @@ import itertools
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, Optional
 
-from ..utils.logger import get_module_logger
+import structlog
 
-logger = get_module_logger("proxy_pool")
+logger = structlog.get_logger(__name__)
 
 
 def _read_list_from_env(env_name: str) -> list[str]:
