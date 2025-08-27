@@ -44,7 +44,12 @@ def main() -> int:
     include_surebet = os.environ.get("SMOKE_INCLUDE_SUREBET", "0").lower() in ("1", "true", "yes", "on")
     surebet_url = os.environ.get("SUREBET_VALUEBETS_URL", "https://es.surebet.com/valuebets")
     # Permitir iniciar sesión más rápido si se proporciona URL de login
-    surebet_start_url = os.environ.get("SUREBET_START_URL", surebet_url)
+    # Prioridad: SUREBET_START_URL > SUREBET_LOGIN_URL > SUREBET_VALUEBETS_URL
+    surebet_start_url = (
+        os.environ.get("SUREBET_START_URL")
+        or os.environ.get("SUREBET_LOGIN_URL")
+        or surebet_url
+    )
     # Surebet: por defecto 1 pestaña para enfoque en una sola ventana de diagnóstico
     surebet_tabs = int(os.environ.get("SUREBET_TABS", "1"))
     # Por ahora no abrimos Betburger en este smoke enfocado a Surebet
