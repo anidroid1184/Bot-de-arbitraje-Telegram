@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dotenv import load_dotenv
-from network.playwright_manager import PlaywrightManager
+from browser.playwright_manager import PlaywrightManager
 from network.playwright_capture import PlaywrightCapture
 from pipeline.realtime_processor import RealtimeProcessor
 import structlog
