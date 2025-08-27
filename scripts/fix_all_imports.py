@@ -1,35 +1,39 @@
 #!/usr/bin/env python3
 """
-Script para corregir automáticamente todos los imports relativos problemáticos.
+Script para corregir automáticamente TODOS los imports problemáticos en el proyecto.
 """
 import os
 import re
 from pathlib import Path
 
-def fix_relative_imports():
-    """Corrige todos los imports relativos en el proyecto."""
+def fix_all_imports():
+    """Corrige sistemáticamente todos los imports problemáticos."""
     src_path = Path(__file__).parent.parent / "src"
     
-    # Mapeo de imports problemáticos a sus reemplazos
-    import_fixes = {
-        r'from \.\.utils\.logger import get_module_logger': 'import structlog',
-        r'from \.\.config\.config import get_config': 'from config.config import get_config',
-        r'from \.\.config import get_config': 'from config.config import get_config',
-        r'from \.\.browser\.playwright_manager import PlaywrightManager': 'from browser.playwright_manager import PlaywrightManager',
-        r'from \.\.browser\.tab_manager import TabManager': 'from browser.tab_manager import TabManager',
-        r'from \.\.browser\.auth_manager import AuthManager': 'from browser.auth_manager import AuthManager',
-        r'from \.\.network\.playwright_capture import PlaywrightCapture': 'from network.playwright_capture import PlaywrightCapture',
-        r'from \.\.parsers\.betburger_html import BetburgerHtmlParser': 'from parsers.betburger_html import BetburgerHtmlParser',
-        r'from \.\.parsers\.surebet_html import SurebetHtmlParser': 'from parsers.surebet_html import SurebetHtmlParser',
-        r'from \.\.processing\.router import ProcessingRouter': 'from processing.router import ProcessingRouter',
-        r'from \.\.scrapers\.surebet import SurebetScraper': 'from scrapers.surebet import SurebetScraper',
-        r'from \.\.snapshots\.snapshot_manager import SnapshotManager': 'from snapshots.snapshot_manager import SnapshotManager',
-        r'from \.\.utils\.command_controller import CommandController': 'from utils.command_controller import CommandController',
-        r'from \.\.ocr\.ocr_utils import OCRUtils': 'from ocr.ocr_utils import OCRUtils',
-        r'logger = get_module_logger\(__name__\)': 'logger = structlog.get_logger(__name__)',
-    }
+    # Patrones de corrección más completos
+    import_fixes = [
+        # Imports relativos con ..
+        (r'from \.\.([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*) import ([a-zA-Z_][a-zA-Z0-9_]*)', r'from \1 import \2'),
+        
+        # Imports con src. explícito
+        (r'from src\.([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*) import ([a-zA-Z_][a-zA-Z0-9_]*)', r'from \1 import \2'),
+        (r'import src\.([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)', r'import \1'),
+        
+        # Logger específico
+        (r'from \.\.utils\.logger import get_module_logger', 'import structlog'),
+        (r'from src\.utils\.logger import get_module_logger', 'import structlog'),
+        (r'from utils\.logger import get_module_logger', 'import structlog'),
+        (r'logger = get_module_logger\(__name__\)', 'logger = structlog.get_logger(__name__)'),
+        
+        # Config específico
+        (r'from \.\.config\.config import get_config', 'from config.config import get_config'),
+        (r'from src\.config\.config import get_config', 'from config.config import get_config'),
+        (r'from \.\.config import get_config', 'from config.config import get_config'),
+        (r'from src\.config import get_config', 'from config.config import get_config'),
+    ]
     
     files_fixed = 0
+    total_fixes = 0
     
     # Buscar todos los archivos .py en src/
     for py_file in src_path.rglob("*.py"):
@@ -41,22 +45,27 @@ def fix_relative_imports():
                 content = f.read()
             
             original_content = content
+            file_fixes = 0
             
             # Aplicar todas las correcciones
-            for pattern, replacement in import_fixes.items():
-                content = re.sub(pattern, replacement, content)
+            for pattern, replacement in import_fixes:
+                new_content = re.sub(pattern, replacement, content)
+                if new_content != content:
+                    file_fixes += 1
+                    total_fixes += 1
+                content = new_content
             
             # Si hubo cambios, escribir el archivo
             if content != original_content:
                 with open(py_file, 'w', encoding='utf-8') as f:
                     f.write(content)
-                print(f"✅ Fixed: {py_file.relative_to(src_path)}")
+                print(f"✅ Fixed {file_fixes} imports in: {py_file.relative_to(src_path)}")
                 files_fixed += 1
                 
         except Exception as e:
             print(f"❌ Error fixing {py_file}: {e}")
     
-    print(f"\n🎯 Fixed {files_fixed} files")
+    print(f"\n🎯 Fixed {total_fixes} imports in {files_fixed} files")
 
 if __name__ == "__main__":
-    fix_relative_imports()
+    fix_all_imports()
