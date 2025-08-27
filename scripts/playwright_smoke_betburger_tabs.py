@@ -13,8 +13,18 @@ Env:
 from __future__ import annotations
 
 import os
+import re
+import sys
 import time
 from typing import Optional
+
+# Bootstrap sys.path to allow running either:
+#  - python -m scripts.playwright_smoke_betburger_tabs
+#  - python scripts/playwright_smoke_betburger_tabs.py
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.abspath(os.path.join(_this_dir, os.pardir))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from src.browser.playwright_manager import PlaywrightManager
 from src.network.playwright_capture import PlaywrightCapture
@@ -42,41 +52,65 @@ def main() -> int:
         per_tab = os.environ.get("SMOKE_PER_TAB", "0").lower() in ("1", "true", "yes", "on")
         captures: list[PlaywrightCapture] = []
 
+        # Optional: broaden capture via env CAPTURE_PATTERNS (semicolon separated regexes)
+        raw_patterns = os.environ.get("CAPTURE_PATTERNS", "").strip()
+        cap_patterns = [p for p in (raw_patterns.split(";") if raw_patterns else []) if p]
+        if cap_patterns:
+            logger.info("Using custom capture patterns", patterns=cap_patterns)
+
+        # local counter for optional route-all diagnostics
+        route_counter = {"count": 0}
+
         if per_tab:
             pages = pm.open_tabs_with_context_rotation(url, count=betburger_tabs)
             logger.info("Tabs opened (per_tab rotation)", engine=engine, url=url, requested=betburger_tabs, count=len(pages))
             # Attach one capture per rotated context
             for idx, ctx in enumerate(pm.rotated_contexts()):
-                cap = PlaywrightCapture(ctx)
+                cap = PlaywrightCapture(ctx, url_patterns=cap_patterns if cap_patterns else None)
                 cap.start()
                 captures.append(cap)
                 logger.info("Capture started for context", index=idx)
         else:
-            pages = pm.open_tabs(url, count=betburger_tabs)
-            logger.info("Tabs opened", engine=engine, url=url, requested=betburger_tabs, count=len(pages))
-            # Attach single capture on shared context
+            # Attach single capture on shared context BEFORE navigation to catch early requests
             assert pm.context is not None
-            cap = PlaywrightCapture(pm.context)
+            cap = PlaywrightCapture(pm.context, url_patterns=cap_patterns if cap_patterns else None)
             cap.start()
             captures.append(cap)
+            pages = pm.open_tabs(url, count=betburger_tabs)
+            logger.info("Tabs opened", engine=engine, url=url, requested=betburger_tabs, count=len(pages))
 
-        # Optionally include Surebet: open tabs and attach captures with basic patterns
+        # Optionally include Surebet: env-driven config + capture attachment
         if include_surebet:
+            # Allow custom patterns via env for Surebet API per docs
+            sb_pattern_env = os.environ.get("SUREBET_PATTERNS", "").strip()
+            sb_patterns = [p for p in re.split(r"[,|]", sb_pattern_env) if p] if sb_pattern_env else [r"/valuebets", r"/api/", r"/arbs", r"/surebets"]
             if per_tab:
                 pages_sb = pm.open_tabs_with_context_rotation(surebet_url, count=surebet_tabs)
                 logger.info("Surebet tabs opened (per_tab rotation)", url=surebet_url, count=len(pages_sb))
+                # Attach one capture per rotated context (after rotation, best-effort for per-tab mode)
                 for idx, ctx in enumerate(pm.rotated_contexts()[-len(pages_sb):]):
-                    cap_sb = PlaywrightCapture(ctx, url_patterns=[r"/valuebets", r"/api/"])
+                    cap_sb = PlaywrightCapture(ctx, url_patterns=sb_patterns)
                     cap_sb.start()
                     captures.append(cap_sb)
-                    logger.info("Surebet capture started for context", index=idx)
             else:
-                pages_sb = pm.open_tabs(surebet_url, count=surebet_tabs)
-                logger.info("Surebet tabs opened", url=surebet_url, count=len(pages_sb))
+                # Shared context: attach capture BEFORE navigation to avoid missing early requests
                 assert pm.context is not None
-                cap_sb = PlaywrightCapture(pm.context, url_patterns=[r"/valuebets", r"/api/"])
+                cap_sb = PlaywrightCapture(pm.context, url_patterns=sb_patterns)
                 cap_sb.start()
                 captures.append(cap_sb)
+                pages_sb = pm.open_tabs(surebet_url, count=surebet_tabs)
+                logger.info("Surebet tabs opened", url=surebet_url, count=len(pages_sb))
+
+            # Optional route-all for Surebet pages
+            route_all_sb = os.environ.get("SMOKE_ROUTE_ALL_SUREBET", "0").lower() in ("1", "true", "yes", "on")
+            if route_all_sb:
+                def _log_and_continue_sb(route: Route, request: Request) -> None:
+                    route_counter["count"] += 1
+                    logger.info("[route*][SB]", method=request.method, url=request.url)
+                    route.continue_()
+                for p in pages_sb:
+                    p.route("**/*", _log_and_continue_sb)
+                logger.info("Surebet route-all enabled", pages=len(pages_sb), routed_count=route_counter["count"]) 
 
         # keep for a short while so user can login manually if needed, while capturing
         sleep_sec = int(os.environ.get("SMOKE_IDLE_SECONDS", "90"))
