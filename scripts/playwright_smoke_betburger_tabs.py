@@ -40,19 +40,28 @@ def main() -> int:
     base = os.environ.get("BETBURGER_BASE") or os.environ.get("BETBURGER_BASE_URL", "https://betburger.com")
     path = os.environ.get("BETBURGER_PATH", "/es/arbs")
     url = f"{base}{path}"
-    engine = os.environ.get("PLAYWRIGHT_ENGINE", "chromium").lower()
+    # Engine: PLAYWRIGHT_ENGINE wins; else try BROWSER/REMOTE_BROWSER; default chromium
+    engine = (os.environ.get("PLAYWRIGHT_ENGINE")
+              or os.environ.get("BROWSER")
+              or os.environ.get("REMOTE_BROWSER")
+              or "chromium").lower()
     include_surebet = os.environ.get("SMOKE_INCLUDE_SUREBET", "0").lower() in ("1", "true", "yes", "on")
-    surebet_url = os.environ.get("SUREBET_VALUEBETS_URL", "https://es.surebet.com/valuebets")
+    # Surebet base and urls
+    sb_base = os.environ.get("SUREBET_BASE_URL", "https://es.surebet.com").rstrip("/")
+    default_sb_valuebets = f"{sb_base}/valuebets"
+    default_sb_login = f"{sb_base}/users/sign_in"
+    surebet_valuebets = os.environ.get("SUREBET_VALUEBETS_URL", default_sb_valuebets)
     # Permitir iniciar sesión más rápido si se proporciona URL de login
-    # Prioridad: SUREBET_START_URL > SUREBET_LOGIN_URL > SUREBET_VALUEBETS_URL
+    # Prioridad: SUREBET_START_URL > SUREBET_LOGIN_URL > (BASE + /users/sign_in) > VALUEBETS
     surebet_start_url = (
         os.environ.get("SUREBET_START_URL")
         or os.environ.get("SUREBET_LOGIN_URL")
-        or surebet_url
+        or default_sb_login
+        or surebet_valuebets
     )
     # Surebet: por defecto 1 pestaña para enfoque en una sola ventana de diagnóstico
     surebet_tabs = int(os.environ.get("SUREBET_TABS", "1"))
-    # Por ahora no abrimos Betburger en este smoke enfocado a Surebet
+    # Tabs to open for Betburger (env-driven; default 0 for Surebet-focused smoke)
     betburger_tabs = int(os.environ.get("BETBURGER_TABS", "0"))
 
     cfg_mgr = ConfigManager()
@@ -96,7 +105,7 @@ def main() -> int:
             sb_patterns = [p for p in re.split(r"[,|]", sb_pattern_env) if p] if sb_pattern_env else [r"/valuebets", r"/api/", r"/arbs", r"/surebets"]
             if per_tab:
                 pages_sb = pm.open_tabs_with_context_rotation(surebet_start_url, count=surebet_tabs)
-                logger.info("Surebet tabs opened (per_tab rotation)", url=surebet_url, count=len(pages_sb))
+                logger.info("Surebet tabs opened (per_tab rotation)", url=surebet_start_url, count=len(pages_sb))
                 # Attach one capture per rotated context (after rotation, best-effort for per-tab mode)
                 for idx, ctx in enumerate(pm.rotated_contexts()[-len(pages_sb):]):
                     cap_sb = PlaywrightCapture(ctx, url_patterns=sb_patterns)
@@ -109,7 +118,7 @@ def main() -> int:
                 cap_sb.start()
                 captures.append(cap_sb)
                 pages_sb = pm.open_tabs(surebet_start_url, count=surebet_tabs)
-                logger.info("Surebet tabs opened", url=surebet_url, count=len(pages_sb))
+                logger.info("Surebet tabs opened", url=surebet_start_url, count=len(pages_sb))
 
             # Optional route-all for Surebet pages
             route_all_sb = os.environ.get("SMOKE_ROUTE_ALL_SUREBET", "0").lower() in ("1", "true", "yes", "on")
@@ -123,8 +132,8 @@ def main() -> int:
                 logger.info("Surebet route-all enabled", pages=len(pages_sb), routed_count=route_counter["count"]) 
 
         # keep for a short while so user can login manually if needed, while capturing
-        # Aumentar tiempo de idle para capturar tráfico y permitir copiar logs
-        sleep_sec = int(os.environ.get("SMOKE_IDLE_SECONDS", "180"))
+        # Idle seconds: prefer MANUAL_SUREBET_SETUP_WAIT_SEC if provided, else SMOKE_IDLE_SECONDS, default 180
+        sleep_sec = int(os.environ.get("MANUAL_SUREBET_SETUP_WAIT_SEC") or os.environ.get("SMOKE_IDLE_SECONDS", "180"))
         logger.info("Idle to allow login/manual checks (capturing pro_search)", seconds=sleep_sec)
 
         seen_filters: set[int] = set()
