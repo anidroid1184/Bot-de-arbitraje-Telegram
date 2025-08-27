@@ -25,6 +25,7 @@ async def test_bot():
     print(f"   .env path: {env_path}")
     print(f"   .env exists: {env_path.exists()}")
     print(f"   Token found: {'Yes' if token else 'No'}")
+    print(f"   Token value: {token}")
     
     if not token:
         print("❌ No token found")
