@@ -36,9 +36,20 @@ def main():
         
         page = context.new_page()
         
-        # Navegar a login
-        page.goto(url)
-        print(f"✅ Página cargada: {url}")
+        # Navegar a login con timeout largo y manejo de errores
+        try:
+            print(f"Navegando a: {url}")
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            print(f"✅ Página cargada: {url}")
+        except Exception as e:
+            print(f"❌ Error navegando: {e}")
+            print("Intentando navegación básica...")
+            try:
+                page.goto(url, timeout=30000)
+                print(f"✅ Página cargada (básica): {url}")
+            except Exception as e2:
+                print(f"❌ Error crítico: {e2}")
+                print("Manteniendo navegador abierto para diagnóstico manual...")
         print("Puedes hacer login manualmente y navegar...")
         print("Los requests se mostrarán en tiempo real")
         print("Presiona Ctrl+C para cerrar\n")
