@@ -44,6 +44,7 @@ class ArbitrageData:
     league: Optional[str] = None
     match: Optional[str] = None
     market: Optional[str] = None
+    market_details: Optional[str] = None  # Full market description
     
     # Bookmaker selections
     selection_a: Optional[BookmakerSelection] = None
@@ -52,11 +53,21 @@ class ArbitrageData:
     # Profit metrics
     roi_pct: Optional[float] = None      # Betburger arbitrage ROI
     value_pct: Optional[float] = None    # Surebet value percentage
+    stake_recommendation: Optional[float] = None  # Recommended stake amount
+    
+    # Timing data (CRITICAL for client)
+    event_start: Optional[str] = None    # ISO datetime string
+    time_to_start_minutes: Optional[int] = None  # Minutes until event starts
+    is_live: Optional[bool] = None       # Is this a live event
+    
+    # Links (CRITICAL for client)
+    target_link: Optional[str] = None    # Generic link
+    bookmaker_links: Optional[Dict[str, str]] = None  # Direct bookmaker links
     
     # Additional data
-    event_start: Optional[str] = None    # ISO datetime string
-    target_link: Optional[str] = None
     filter_id: Optional[str] = None
+    competition: Optional[str] = None    # Full competition name
+    country: Optional[str] = None        # Country/region
     
     # Metadata
     raw_data: Optional[Dict[str, Any]] = None  # Original JSON for debugging
@@ -85,6 +96,36 @@ class ArbitrageData:
     def profit_percentage(self) -> Optional[float]:
         """Get profit percentage regardless of source."""
         return self.roi_pct if self.roi_pct is not None else self.value_pct
+    
+    @property
+    def minutes_to_start(self) -> Optional[int]:
+        """Calculate minutes until event starts."""
+        if not self.event_start:
+            return None
+        
+        try:
+            from datetime import datetime
+            event_time = datetime.fromisoformat(self.event_start.replace('Z', '+00:00'))
+            now = datetime.now(event_time.tzinfo)
+            delta = event_time - now
+            return max(0, int(delta.total_seconds() / 60))
+        except:
+            return self.time_to_start_minutes
+    
+    @property
+    def urgency_level(self) -> str:
+        """Get urgency level based on time to start."""
+        minutes = self.minutes_to_start
+        if minutes is None:
+            return "unknown"
+        elif minutes <= 5:
+            return "critical"
+        elif minutes <= 15:
+            return "high"
+        elif minutes <= 60:
+            return "medium"
+        else:
+            return "low"
     
     @property
     def primary_bookmaker(self) -> Optional[str]:
