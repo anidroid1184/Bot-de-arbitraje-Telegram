@@ -144,10 +144,29 @@ def do_login(username_or_email: str, password: str, base_url: str, arbs_path: st
                 log("info", "Navigating to login candidate", url=url)
                 page.goto(url, timeout=20000, wait_until="domcontentloaded")
                 try:
-                    page.wait_for_selector('input[name="email"]', timeout=5000)
-                    page.wait_for_selector('input[name="password"]', timeout=5000)
-                    found_form = True
-                    break
+                    # Support different form markups Betburger may use
+                    selectors_email = [
+                        'input[name="email"]',
+                        'input[type="email"]',
+                        'input[name="user[email]"]',
+                        '#email',
+                    ]
+                    selectors_pwd = [
+                        'input[name="password"]',
+                        'input[type="password"]',
+                        'input[name="user[password]"]',
+                        '#password',
+                    ]
+                    email_sel = next((s for s in selectors_email if page.locator(s).count() >= 1), None)
+                    pwd_sel = next((s for s in selectors_pwd if page.locator(s).count() >= 1), None)
+                    if email_sel and pwd_sel:
+                        # Also wait a little to make sure interactable
+                        page.wait_for_selector(email_sel, timeout=5000)
+                        page.wait_for_selector(pwd_sel, timeout=5000)
+                        found_form = True
+                        email_selector = email_sel
+                        pwd_selector = pwd_sel
+                        break
                 except PlaywrightTimeoutError:
                     continue
 
@@ -158,8 +177,27 @@ def do_login(username_or_email: str, password: str, base_url: str, arbs_path: st
             # Fill and submit
             log("info", "Filling credentials")
             # Betburger typically uses email; project uses BETBURGER_USERNAME as env name.
-            page.fill('input[name="email"]', username_or_email)
-            page.fill('input[name="password"]', password)
+            try:
+                page.fill(email_selector, username_or_email)
+            except Exception:
+                # Fallback attempts
+                for sel in ['input[name="email"]','input[type="email"]','input[name="user[email]"]','#email']:
+                    try:
+                        if page.locator(sel).count():
+                            page.fill(sel, username_or_email)
+                            break
+                    except Exception:
+                        pass
+            try:
+                page.fill(pwd_selector, password)
+            except Exception:
+                for sel in ['input[name="password"]','input[type="password"]','input[name="user[password]"]','#password']:
+                    try:
+                        if page.locator(sel).count():
+                            page.fill(sel, password)
+                            break
+                    except Exception:
+                        pass
 
             # Try different submit strategies
             submitted = False
@@ -168,6 +206,7 @@ def do_login(username_or_email: str, password: str, base_url: str, arbs_path: st
                 'button:has-text("Login")',
                 'button:has-text("Sign in")',
                 'button:has-text("Iniciar sesión")',
+                'input[type="submit"]',
             ]:
                 try:
                     if page.is_visible(selector):
@@ -178,7 +217,10 @@ def do_login(username_or_email: str, password: str, base_url: str, arbs_path: st
                     continue
             if not submitted:
                 # Fallback: press Enter in password field
-                page.press('input[name="password"]', "Enter")
+                try:
+                    page.press(pwd_selector, "Enter")
+                except Exception:
+                    pass
 
             # Wait for success
             ok = wait_for_login_success(page, login_url=page.url, arbs_url=arbs_url, timeout_ms=20000)

@@ -84,22 +84,51 @@ def main() -> int:
 
         seen_filters: set[int] = set()
         t0 = time.time()
+        total_matched = 0
+        total_req = 0
+        total_res = 0
+        last_summary = t0
         while time.time() - t0 < sleep_sec:
             for cap in captures:
                 data = cap.flush()
                 for rec in data:
-                    if rec.get("type") == "request" and isinstance(rec.get("json"), dict):
-                        j = rec["json"]
-                        fid = j.get("filter_id") or j.get("filterId")
-                        if isinstance(fid, int) and fid not in seen_filters:
-                            seen_filters.add(fid)
-                            label = "unknown"
-                            if fid == 1218070:
-                                label = "Codere"
-                            elif fid == 1218528:
-                                label = "Betfair"
-                            logger.info("Detected pro_search filter_id", filter_id=fid, label=label)
+                    rtype = rec.get("type")
+                    url = rec.get("url")
+                    if not url:
+                        continue
+                    total_matched += 1
+                    if rtype == "request":
+                        total_req += 1
+                        # Log one-liners for every pro_search match
+                        method = rec.get("method", "?")
+                        has_json = isinstance(rec.get("json"), dict)
+                        logger.info("[capture] request", method=method, url=url, json=has_json)
+                        if has_json:
+                            j = rec["json"]
+                            fid = j.get("filter_id") or j.get("filterId")
+                            if isinstance(fid, int) and fid not in seen_filters:
+                                seen_filters.add(fid)
+                                label = "unknown"
+                                if fid == 1218070:
+                                    label = "Codere"
+                                elif fid == 1218528:
+                                    label = "Betfair"
+                                logger.info("Detected pro_search filter_id", filter_id=fid, label=label)
+                    elif rtype == "response":
+                        total_res += 1
+                        status = rec.get("status")
+                        logger.info("[capture] response", status=status, url=url)
+            # periodic summary every ~10s
+            now = time.time()
+            if now - last_summary >= 10:
+                logger.info("Capture summary", matched=total_matched, requests=total_req, responses=total_res, elapsed=int(now - t0))
+                last_summary = now
             time.sleep(1.0)
+
+        # final summary
+        logger.info("Capture finished", matched=total_matched, requests=total_req, responses=total_res, duration=int(time.time() - t0))
+        if total_matched == 0:
+            logger.warning("No pro_search traffic matched. If not logged in, Betburger may not emit pro_search. Try logging in (headed) and retry.")
         return 0
     except Exception as e:
         logger.exception("Playwright smoke failed", error=str(e))
