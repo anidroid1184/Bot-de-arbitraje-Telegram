@@ -157,7 +157,45 @@ class RealtimePipelineTest:
             print("❌ No se puede probar conectividad - RealtimeProcessor no disponible")
             return {"error": "RealtimeProcessor not available"}
         
-        results = await self.processor.test_channel_connectivity()
+        # If processor provides the helper, use it
+        if hasattr(self.processor, "test_channel_connectivity"):
+            results = await self.processor.test_channel_connectivity()
+        else:
+            # Fallback: run connectivity test here using mapper + telegram sender
+            if ChannelMapper is None or TelegramSender is None:
+                print("❌ Faltan dependencias para test de conectividad (ChannelMapper/TelegramSender)")
+                return False
+
+            # Load config
+            mapper = ChannelMapper(None)
+
+            # Collect channels from config (bb, sb, support)
+            all_channels = []
+            for profile_name, cfg in (mapper.config.get('betburger_profiles', {}) or {}).items():
+                if cfg and cfg.get('channel_id'):
+                    all_channels.append((f"betburger.{profile_name}", cfg['channel_id']))
+            for profile_name, cfg in (mapper.config.get('surebet_profiles', {}) or {}).items():
+                if cfg and cfg.get('channel_id'):
+                    all_channels.append((f"surebet.{profile_name}", cfg['channel_id']))
+            for name, cfg in (mapper.config.get('support', {}) or {}).items():
+                if cfg and cfg.get('channel_id'):
+                    all_channels.append((f"support.{name}", cfg['channel_id']))
+
+            # Sender with token from env
+            token = os.getenv("TELEGRAM_BOT_TOKEN")
+            sender = TelegramSender(token)
+
+            results = {}
+            for channel_name, channel_id in all_channels:
+                try:
+                    ok = await sender.send_test_message_async(
+                        channel_id,
+                        f"🧪 **Test de conectividad**\n\nCanal: {channel_name}\nID: {channel_id}\n⏱️ {time.strftime('%H:%M:%S')}"
+                    )
+                    results[channel_name] = ok
+                except Exception as e:
+                    logger.error("Channel test failed", channel=channel_name, error=str(e))
+                    results[channel_name] = False
         
         print("\n📊 Channel Test Results:")
         success_count = 0
