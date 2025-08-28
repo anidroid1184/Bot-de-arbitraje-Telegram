@@ -63,7 +63,12 @@ class RealtimePipelineTest:
     
     def __init__(self):
         """Initialize test."""
-        self.processor = RealtimeProcessor()
+        if RealtimeProcessor is None:
+            print("❌ RealtimeProcessor no disponible - creando mock")
+            self.processor = None
+        else:
+            self.processor = RealtimeProcessor()
+        
         self.playwright_manager = None
         self.capture = None
         self.processed_requests = 0
@@ -72,6 +77,10 @@ class RealtimePipelineTest:
     async def test_channel_connectivity(self):
         """Test conectividad a todos los canales configurados."""
         print("🧪 Testing channel connectivity...")
+        
+        if self.processor is None:
+            print("❌ No se puede probar conectividad - RealtimeProcessor no disponible")
+            return {"error": "RealtimeProcessor not available"}
         
         results = await self.processor.test_channel_connectivity()
         
