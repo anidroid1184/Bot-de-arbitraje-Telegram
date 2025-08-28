@@ -84,6 +84,8 @@ class PlaywrightCapture:
         if fields_env:
             self.persist_fields.extend(f.strip() for f in fields_env.split(",") if f.strip())
         self._fh = None  # file handle for persistence
+        # Flush policy: flush on every write if enabled via env CAPTURE_FLUSH_EVERY=1/true
+        self._flush_every = os.environ.get("CAPTURE_FLUSH_EVERY", "0").lower() in ("1", "true", "yes", "on")
 
     def _match(self, url: str) -> bool:
         # Base match against primary patterns
@@ -128,6 +130,12 @@ class PlaywrightCapture:
                 if self.persist_fields:
                     to_write = {k: rec.get(k) for k in self.persist_fields}
                 self._fh.write(json.dumps(to_write, ensure_ascii=False) + "\n")
+                # Optionally force flush for real-time durability in case of abrupt termination
+                if self._flush_every:
+                    try:
+                        self._fh.flush()
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.warning("capture_persist_write_error", error=str(e))
 
@@ -141,7 +149,9 @@ class PlaywrightCapture:
         if self.persist_path:
             try:
                 os.makedirs(os.path.dirname(self.persist_path) or ".", exist_ok=True)
-                self._fh = open(self.persist_path, "a", encoding="utf-8")
+                # Use line-buffered I/O so each line is pushed to OS buffers immediately
+                # Note: line buffering is only honored in text mode; we are using text mode here.
+                self._fh = open(self.persist_path, "a", encoding="utf-8", buffering=1)
                 logger.info("capture_persist_open", path=self.persist_path)
             except Exception as e:
                 logger.warning("capture_persist_open_error", error=str(e), path=self.persist_path)
