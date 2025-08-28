@@ -24,9 +24,25 @@ import datetime as dt
 
 import structlog
 
-# Use absolute import to avoid relative import issues when running from project root
-from src.scrapers.surebet import parse_valuebets_html
-from src.processors.arbitrage_data import ArbitrageData
+# Prefer absolute imports; fallback to package-local if PYTHONPATH differs
+try:
+    # Use absolute import to avoid relative import issues when running from project root
+    from src.scrapers.surebet import parse_valuebets_html
+except ModuleNotFoundError:
+    try:
+        # Running inside package context: use relative import to sibling package
+        from ..scrapers.surebet import parse_valuebets_html  # type: ignore
+    except Exception:
+        # Fallback if project root is directly on path without 'src' package
+        from scrapers.surebet import parse_valuebets_html  # type: ignore
+
+try:
+    from src.processors.arbitrage_data import ArbitrageData
+except ModuleNotFoundError:
+    try:
+        from ..processors.arbitrage_data import ArbitrageData  # type: ignore
+    except Exception:
+        from processors.arbitrage_data import ArbitrageData  # type: ignore
 
 
 def _now_iso_utc() -> str:
