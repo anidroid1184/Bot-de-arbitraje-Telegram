@@ -21,9 +21,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dotenv import load_dotenv
-from browser.playwright_manager import PlaywrightManager
-from network.playwright_capture import PlaywrightCapture
-from pipeline.realtime_processor import RealtimeProcessor
+try:
+    from browser.playwright_manager import PlaywrightManager
+    from network.playwright_capture import PlaywrightCapture
+    from pipeline.realtime_processor import RealtimeProcessor
+except ImportError:
+    # Fallback: create minimal test without browser dependencies
+    PlaywrightManager = None
+    PlaywrightCapture = None
+    from pipeline.realtime_processor import RealtimeProcessor
 import structlog
 
 # Load environment
