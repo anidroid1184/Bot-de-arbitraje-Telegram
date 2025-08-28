@@ -101,6 +101,9 @@ class PlaywrightCapture:
         return True
 
     def _append_record(self, rec: dict[str, Any]) -> None:
+        # If capture is disabled, ignore new records (can happen during shutdown race)
+        if not self._enabled:
+            return
         # Trim large bodies
         if "body" in rec and isinstance(rec["body"], str) and len(rec["body"]) > self.max_body_chars:
             rec["body"] = rec["body"][: self.max_body_chars] + "…"
@@ -119,7 +122,7 @@ class PlaywrightCapture:
         if len(self.buffer) < self.max_buffer:
             self.buffer.append(rec)
         # Persistence (best-effort, non-fatal)
-        if self.persist_path and self._fh is not None:
+        if self.persist_path and self._fh is not None and self._enabled:
             try:
                 to_write = rec
                 if self.persist_fields:
@@ -249,8 +252,11 @@ class PlaywrightCapture:
     def stop(self) -> None:
         """Close persistence handle if any. Does not detach listeners (Playwright lacks simple off())."""
         try:
+            # Disable capture first to avoid races with event handlers
+            self._enabled = False
             if self._fh:
                 self._fh.flush()
                 self._fh.close()
+                self._fh = None
         except Exception:
             pass
