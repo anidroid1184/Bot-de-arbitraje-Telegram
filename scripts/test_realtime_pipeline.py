@@ -69,7 +69,8 @@ except ImportError as e:
 
 # Load environment
 ENV_PATH = Path(__file__).parent.parent / ".env"
-load_dotenv(ENV_PATH, override=True)
+# IMPORTANT: do not override shell exports (like BOT_HEADLESS/BROWSER) with .env
+load_dotenv(ENV_PATH, override=False)
 
 logger = structlog.get_logger(__name__)
 
@@ -232,9 +233,21 @@ class RealtimePipelineTest:
                 def __init__(self):
                     self.bot = self
                     self.headless = os.getenv("BOT_HEADLESS", "false").lower() == "true"
-                    self.browser = os.getenv("BROWSER", "firefox")
+                    # Prefer chromium by default in servers
+                    self.browser = os.getenv("BROWSER", "chromium")
 
             config = Config()
+            # If no DISPLAY (common on servers), force headless and prefer chromium
+            if not os.environ.get("DISPLAY"):
+                if not config.headless:
+                    os.environ["BOT_HEADLESS"] = "true"
+                    config.headless = True
+                if config.browser not in ("chromium", "webkit", "firefox"):
+                    config.browser = "chromium"
+            print(f"DEBUG: Resolved browser engine: {config.browser}")
+            print(f"DEBUG: Resolved headless: {config.headless}")
+            print(f"DEBUG: Resolved browser engine: {config.browser}")
+            print(f"DEBUG: Resolved headless: {config.headless}")
 
             def _setup_sync():
                 # If PlaywrightManager is available, use it; else fall back to a minimal inline manager
