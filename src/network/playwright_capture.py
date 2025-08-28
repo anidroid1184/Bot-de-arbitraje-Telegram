@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import re
+import os
+import random
 from typing import Any, Dict, List, Optional
 from playwright.sync_api import BrowserContext, Page, Request, Response, WebSocket  # type: ignore
 
@@ -25,23 +27,122 @@ PRO_SEARCH_REGEX = re.compile(r"/api/(?:v\d+/)?pro_search", re.IGNORECASE)
 
 
 class PlaywrightCapture:
-    def __init__(self, target: BrowserContext | Page, url_patterns: Optional[list[str]] = None):
+    def __init__(
+        self,
+        target: BrowserContext | Page,
+        url_patterns: Optional[list[str]] = None,
+        include_patterns: Optional[list[str]] = None,
+        exclude_patterns: Optional[list[str]] = None,
+        persist_path: Optional[str] = None,
+        persist_fields: Optional[list[str]] = None,
+        sample_rate: float = 1.0,
+        max_buffer: int = 1000,
+        drop_policy: str = "drop_oldest",  # or "drop_new"
+        max_body_chars: int = 2000,
+    ):
         self.target = target
         self.buffer: list[dict[str, Any]] = []
         self._enabled = False
         # custom string patterns OR defaults to pro_search
         self.patterns = [re.compile(p, re.IGNORECASE) for p in (url_patterns or [])] or [PRO_SEARCH_REGEX]
 
+        # Advanced filtering from args or environment
+        # Env vars (comma-separated regex): CAPTURE_INCLUDE, CAPTURE_EXCLUDE
+        env_inc = os.getenv("CAPTURE_INCLUDE")
+        env_exc = os.getenv("CAPTURE_EXCLUDE")
+        self.include = [re.compile(p.strip(), re.IGNORECASE) for p in (include_patterns or [])]
+        if env_inc:
+            self.include.extend(re.compile(p.strip(), re.IGNORECASE) for p in env_inc.split(",") if p.strip())
+        self.exclude = [re.compile(p.strip(), re.IGNORECASE) for p in (exclude_patterns or [])]
+        if env_exc:
+            self.exclude.extend(re.compile(p.strip(), re.IGNORECASE) for p in env_exc.split(",") if p.strip())
+
+        # If no explicit url_patterns were given but we do have include filters, use them as base patterns.
+        # This lets CAPTURE_INCLUDE fully define what to capture (e.g., Surebet valuebets AND Betburger pro_search).
+        if not url_patterns and self.include:
+            self.patterns = list(self.include)
+
+        # Sampling and buffer protection
+        try:
+            self.sample_rate = float(os.getenv("CAPTURE_SAMPLE", str(sample_rate)))
+        except Exception:
+            self.sample_rate = sample_rate
+        try:
+            self.max_buffer = int(os.getenv("CAPTURE_MAX_BUFFER", str(max_buffer)))
+        except Exception:
+            self.max_buffer = max_buffer
+        self.drop_policy = os.getenv("CAPTURE_DROP_POLICY", drop_policy)
+        try:
+            self.max_body_chars = int(os.getenv("CAPTURE_MAX_BODY_CHARS", str(max_body_chars)))
+        except Exception:
+            self.max_body_chars = max_body_chars
+
+        # Optional persistence
+        self.persist_path = os.getenv("CAPTURE_JSONL_PATH", persist_path or "") or None
+        fields_env = os.getenv("CAPTURE_PERSIST_FIELDS")
+        self.persist_fields = [f.strip() for f in (persist_fields or []) if f.strip()]
+        if fields_env:
+            self.persist_fields.extend(f.strip() for f in fields_env.split(",") if f.strip())
+        self._fh = None  # file handle for persistence
+
     def _match(self, url: str) -> bool:
-        return any(p.search(url) for p in self.patterns)
+        # Base match against primary patterns
+        if not any(p.search(url) for p in self.patterns):
+            return False
+        # Include (if provided) must match
+        if self.include and not any(p.search(url) for p in self.include):
+            return False
+        # Exclude (if provided) must NOT match
+        if self.exclude and any(p.search(url) for p in self.exclude):
+            return False
+        # Sampling
+        if self.sample_rate < 1.0 and random.random() > self.sample_rate:
+            return False
+        return True
+
+    def _append_record(self, rec: dict[str, Any]) -> None:
+        # Trim large bodies
+        if "body" in rec and isinstance(rec["body"], str) and len(rec["body"]) > self.max_body_chars:
+            rec["body"] = rec["body"][: self.max_body_chars] + "…"
+        # Buffer protection
+        if len(self.buffer) >= self.max_buffer:
+            if self.drop_policy == "drop_oldest" and self.buffer:
+                self.buffer.pop(0)
+            elif self.drop_policy == "drop_new":
+                # skip enqueueing
+                pass
+            else:
+                # default to dropping oldest
+                if self.buffer:
+                    self.buffer.pop(0)
+        # Enqueue
+        if len(self.buffer) < self.max_buffer:
+            self.buffer.append(rec)
+        # Persistence (best-effort, non-fatal)
+        if self.persist_path and self._fh is not None:
+            try:
+                to_write = rec
+                if self.persist_fields:
+                    to_write = {k: rec.get(k) for k in self.persist_fields}
+                self._fh.write(json.dumps(to_write, ensure_ascii=False) + "\n")
+            except Exception as e:
+                logger.warning("capture_persist_write_error", error=str(e))
 
     def start(self) -> None:
         if self._enabled:
             return
         self._enabled = True
         # Diagnostics: optionally log all requests/responses regardless of match
-        import os
         log_all = os.environ.get("CAPTURE_LOG_ALL", "0").lower() in ("1", "true", "yes", "on")
+        # Open persistence file if configured
+        if self.persist_path:
+            try:
+                os.makedirs(os.path.dirname(self.persist_path) or ".", exist_ok=True)
+                self._fh = open(self.persist_path, "a", encoding="utf-8")
+                logger.info("capture_persist_open", path=self.persist_path)
+            except Exception as e:
+                logger.warning("capture_persist_open_error", error=str(e), path=self.persist_path)
+                self._fh = None
 
         def on_request(req: Request) -> None:
             try:
@@ -65,7 +166,7 @@ class PlaywrightCapture:
                         rec["json"] = json.loads(post_data)
                     except Exception:
                         rec["body"] = post_data
-                self.buffer.append(rec)
+                self._append_record(rec)
                 logger.debug("Captured request", url=req.url)
             except Exception as e:
                 logger.warning("on_request handler error", error=str(e))
@@ -89,7 +190,7 @@ class PlaywrightCapture:
                         rec["text"] = res.text()
                     except Exception:
                         pass
-                self.buffer.append(rec)
+                self._append_record(rec)
                 logger.debug("Captured response", url=res.url, status=res.status)
             except Exception as e:
                 logger.warning("on_response handler error", error=str(e))
@@ -99,7 +200,7 @@ class PlaywrightCapture:
             try:
                 if not self._match(ws.url):
                     return
-                self.buffer.append({
+                self._append_record({
                     "type": "ws_open",
                     "url": ws.url,
                 })
@@ -107,7 +208,7 @@ class PlaywrightCapture:
 
                 def _on_frame_sent(payload: str) -> None:
                     try:
-                        self.buffer.append({
+                        self._append_record({
                             "type": "ws_frame_sent",
                             "url": ws.url,
                             "size": len(payload) if payload else 0,
@@ -117,7 +218,7 @@ class PlaywrightCapture:
 
                 def _on_frame_received(payload: str) -> None:
                     try:
-                        self.buffer.append({
+                        self._append_record({
                             "type": "ws_frame_received",
                             "url": ws.url,
                             "size": len(payload) if payload else 0,
@@ -144,3 +245,12 @@ class PlaywrightCapture:
         data = list(self.buffer)
         self.buffer.clear()
         return data
+
+    def stop(self) -> None:
+        """Close persistence handle if any. Does not detach listeners (Playwright lacks simple off())."""
+        try:
+            if self._fh:
+                self._fh.flush()
+                self._fh.close()
+        except Exception:
+            pass

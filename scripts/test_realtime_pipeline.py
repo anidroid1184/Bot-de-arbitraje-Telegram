@@ -91,6 +91,19 @@ class RealtimePipelineTest:
         self.capture = None
         self.processed_requests = 0
         self.sent_alerts = 0
+        # Tabs configuration (can be overridden by CLI)
+        def _int_env(*keys: str, default: int = 1) -> int:
+            for k in keys:
+                v = os.getenv(k)
+                if v is not None and str(v).strip() != "":
+                    try:
+                        return int(str(v).strip())
+                    except Exception:
+                        pass
+            return default
+        # Support both the new and the .env.example names
+        self.tabs_sb = _int_env("TABS_SB", "SUREBET_TABS", default=1)
+        self.tabs_bb = _int_env("TABS_BB", "BETBURGER_TABS", default=1)
 
     def _create_processor_compat(self):
         """Try multiple constructor signatures for RealtimeProcessor for cross-version compatibility."""
@@ -370,10 +383,21 @@ class RealtimePipelineTest:
             if ctx is None:
                 logger.error("Browser context not available")
                 return False
-            page = await asyncio.to_thread(ctx.new_page)
-            # Use keyword args to avoid positional mismatches (timeout, wait_until)
-            await asyncio.to_thread(page.goto, "https://es.surebet.com/valuebets", timeout=8000, wait_until="domcontentloaded")
-            print(f"✅ Opened Surebet tab: {page.url}")
+            url = "https://es.surebet.com/valuebets"
+            # Open one or multiple tabs
+            pages = []
+            if PlaywrightManager is not None and hasattr(self.playwright_manager, "open_tabs"):
+                pages = await asyncio.to_thread(self.playwright_manager.open_tabs, url, max(1, int(self.tabs_sb)))
+            else:
+                # Fallback: open N pages manually
+                for _ in range(max(1, int(self.tabs_sb))):
+                    p = await asyncio.to_thread(ctx.new_page)
+                    await asyncio.to_thread(p.goto, url, timeout=8000, wait_until="domcontentloaded")
+                    pages.append(p)
+            if pages:
+                print(f"✅ Opened {len(pages)} Surebet tab(s). First URL: {pages[0].url}")
+            else:
+                print("⚠️ No Surebet tabs opened (unexpected)")
             print("🔄 Intercepting requests... (navigate manually to see alerts)")
             print("📊 Press Ctrl+C to stop and see stats")
             
@@ -403,7 +427,15 @@ class RealtimePipelineTest:
             print("\n⏹️ Stopping test...")
             
         finally:
-            # No explicit stop method required for PlaywrightCapture; just close the browser
+            # Stop capture (flush/close persistence file if configured)
+            if self.capture and hasattr(self.capture, "stop"):
+                try:
+                    if inspect.iscoroutinefunction(self.capture.stop):
+                        await self.capture.stop()
+                    else:
+                        await asyncio.to_thread(self.capture.stop)
+                except Exception:
+                    pass
             if self.playwright_manager and hasattr(self.playwright_manager, "close"):
                 if inspect.iscoroutinefunction(self.playwright_manager.close):
                     await self.playwright_manager.close()
@@ -425,10 +457,19 @@ class RealtimePipelineTest:
             if ctx is None:
                 logger.error("Browser context not available")
                 return False
-            page = await asyncio.to_thread(ctx.new_page)
-            # Use keyword args to avoid positional mismatches (timeout, wait_until)
-            await asyncio.to_thread(page.goto, "https://betburger.com/es/arbs", timeout=8000, wait_until="domcontentloaded")
-            print(f"✅ Opened Betburger tab: {page.url}")
+            url = "https://betburger.com/es/arbs"
+            pages = []
+            if PlaywrightManager is not None and hasattr(self.playwright_manager, "open_tabs"):
+                pages = await asyncio.to_thread(self.playwright_manager.open_tabs, url, max(1, int(self.tabs_bb)))
+            else:
+                for _ in range(max(1, int(self.tabs_bb))):
+                    p = await asyncio.to_thread(ctx.new_page)
+                    await asyncio.to_thread(p.goto, url, timeout=8000, wait_until="domcontentloaded")
+                    pages.append(p)
+            if pages:
+                print(f"✅ Opened {len(pages)} Betburger tab(s). First URL: {pages[0].url}")
+            else:
+                print("⚠️ No Betburger tabs opened (unexpected)")
             print("🔄 Intercepting requests... (navigate manually to see alerts)")
             print("📊 Press Ctrl+C to stop and see stats")
             
@@ -458,11 +499,14 @@ class RealtimePipelineTest:
             print("\n⏹️ Stopping test...")
             
         finally:
-            if self.capture and hasattr(self.capture, "stop_capture"):
-                if inspect.iscoroutinefunction(self.capture.stop_capture):
-                    await self.capture.stop_capture()
-                else:
-                    await asyncio.to_thread(self.capture.stop_capture)
+            if self.capture and hasattr(self.capture, "stop"):
+                try:
+                    if inspect.iscoroutinefunction(self.capture.stop):
+                        await self.capture.stop()
+                    else:
+                        await asyncio.to_thread(self.capture.stop)
+                except Exception:
+                    pass
             if self.playwright_manager and hasattr(self.playwright_manager, "close"):
                 if inspect.iscoroutinefunction(self.playwright_manager.close):
                     await self.playwright_manager.close()
@@ -479,6 +523,8 @@ async def main():
     parser = argparse.ArgumentParser(description="Test realtime pipeline with intercepted requests")
     parser.add_argument("--test-channels", action="store_true", help="Only test channel connectivity")
     parser.add_argument("--platform", choices=["surebet", "betburger"], default="surebet", help="Platform to test")
+    parser.add_argument("--tabs-bb", type=int, default=None, help="Number of Betburger tabs to open (default from TABS_BB or 1)")
+    parser.add_argument("--tabs-sb", type=int, default=None, help="Number of Surebet tabs to open (default from TABS_SB or 1)")
     args = parser.parse_args()
     
     # Check token
@@ -488,6 +534,11 @@ async def main():
         return 1
     
     test = RealtimePipelineTest()
+    # Override tabs from CLI if provided
+    if args.tabs_bb is not None:
+        test.tabs_bb = max(1, int(args.tabs_bb))
+    if args.tabs_sb is not None:
+        test.tabs_sb = max(1, int(args.tabs_sb))
     
     if args.test_channels:
         success = await test.test_channel_connectivity()
@@ -496,6 +547,11 @@ async def main():
     print("🚀 Starting realtime pipeline test...")
     print(f"📱 Platform: {args.platform}")
     print(f"🔑 Token configured: {token[:10]}...")
+    # Show resolved tabs for transparency
+    try:
+        print(f"🧩 Resolved tabs -> Surebet: {test.tabs_sb}, Betburger: {test.tabs_bb}")
+    except Exception:
+        pass
     
     if args.platform == "surebet":
         success = await test.run_surebet_test()
