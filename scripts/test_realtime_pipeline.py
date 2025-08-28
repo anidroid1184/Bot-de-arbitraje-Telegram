@@ -237,14 +237,84 @@ class RealtimePipelineTest:
             config = Config()
 
             def _setup_sync():
-                pm = PlaywrightManager(config)
-                # Launch browser and obtain a BrowserContext
-                pm.launch(engine=config.browser)
-                if pm.context is None:
-                    raise RuntimeError("Playwright context not initialized after launch")
-                # PlaywrightCapture expects a BrowserContext or Page
-                cap = PlaywrightCapture(pm.context)
-                return pm, cap
+                # If PlaywrightManager is available, use it; else fall back to a minimal inline manager
+                if PlaywrightManager is not None:
+                    pm = PlaywrightManager(config)
+                    # Launch browser and obtain a BrowserContext
+                    pm.launch(engine=config.browser)
+                    if pm.context is None:
+                        raise RuntimeError("Playwright context not initialized after launch")
+                    # PlaywrightCapture expects a BrowserContext or Page
+                    if PlaywrightCapture is None:
+                        raise RuntimeError("PlaywrightCapture module is not available")
+                    cap = PlaywrightCapture(pm.context)
+                    return pm, cap
+                else:
+                    # Minimal inline manager using sync_playwright
+                    from playwright.sync_api import sync_playwright  # type: ignore
+                    import types
+
+                    pl = sync_playwright().start()
+
+                    def _ua() -> str:
+                        return (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                        )
+
+                    browser = None
+                    context = None
+                    if config.browser == "firefox":
+                        browser = pl.firefox.launch(headless=config.headless)
+                        context = browser.new_context(user_agent=_ua())
+                    elif config.browser == "webkit":
+                        browser = pl.webkit.launch(headless=config.headless)
+                        context = browser.new_context(user_agent=_ua())
+                    else:
+                        try:
+                            browser = pl.chromium.launch(
+                                headless=config.headless,
+                                args=["--no-sandbox", "--disable-dev-shm-usage"],
+                            )
+                        except Exception as e:
+                            raise RuntimeError(f"Chromium launch failed: {e}")
+                        context = browser.new_context(user_agent=_ua())
+
+                    # Apply small defaults
+                    try:
+                        context.set_default_navigation_timeout(10000)
+                        context.set_default_timeout(10000)
+                    except Exception:
+                        pass
+
+                    # Build a tiny manager-like object with close()
+                    pm = types.SimpleNamespace()
+                    pm.browser = browser
+                    pm.context = context
+
+                    def _close_inline():
+                        try:
+                            if context:
+                                context.close()
+                        except Exception:
+                            pass
+                        try:
+                            if browser:
+                                browser.close()
+                        except Exception:
+                            pass
+                        try:
+                            if pl:
+                                pl.stop()
+                        except Exception:
+                            pass
+
+                    pm.close = _close_inline
+
+                    if PlaywrightCapture is None:
+                        raise RuntimeError("PlaywrightCapture module is not available")
+                    cap = PlaywrightCapture(context)
+                    return pm, cap
 
             self.playwright_manager, self.capture = await asyncio.to_thread(_setup_sync)
 
@@ -288,7 +358,8 @@ class RealtimePipelineTest:
                 logger.error("Browser context not available")
                 return False
             page = await asyncio.to_thread(ctx.new_page)
-            await asyncio.to_thread(page.goto, "https://es.surebet.com/valuebets", None, "domcontentloaded", 8000)
+            # Use keyword args to avoid positional mismatches (timeout, wait_until)
+            await asyncio.to_thread(page.goto, "https://es.surebet.com/valuebets", timeout=8000, wait_until="domcontentloaded")
             print(f"✅ Opened Surebet tab: {page.url}")
             print("🔄 Intercepting requests... (navigate manually to see alerts)")
             print("📊 Press Ctrl+C to stop and see stats")
@@ -342,7 +413,8 @@ class RealtimePipelineTest:
                 logger.error("Browser context not available")
                 return False
             page = await asyncio.to_thread(ctx.new_page)
-            await asyncio.to_thread(page.goto, "https://betburger.com/es/arbs", None, "domcontentloaded", 8000)
+            # Use keyword args to avoid positional mismatches (timeout, wait_until)
+            await asyncio.to_thread(page.goto, "https://betburger.com/es/arbs", timeout=8000, wait_until="domcontentloaded")
             print(f"✅ Opened Betburger tab: {page.url}")
             print("🔄 Intercepting requests... (navigate manually to see alerts)")
             print("📊 Press Ctrl+C to stop and see stats")
