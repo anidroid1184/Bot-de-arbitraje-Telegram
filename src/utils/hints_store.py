@@ -30,9 +30,9 @@ import os
 from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
 
-from .logger import get_module_logger
+import structlog
 
-logger = get_module_logger("hints_store")
+logger = structlog.get_logger("hints_store")
 
 DEFAULT_PATH = os.path.join("logs", "models", "filter_hints.json")
 

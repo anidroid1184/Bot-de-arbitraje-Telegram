@@ -22,11 +22,31 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import datetime as dt
 
-from src.scrapers.surebet import parse_valuebets_html
+from scrapers.surebet import parse_valuebets_html
 
 
 def _now_iso_utc() -> str:
     return dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+class SurebetParser:
+    """Parser for Surebet responses."""
+    
+    def process_response(self, response_data: Dict[str, Any], profile: str = None) -> List[Dict[str, Any]]:
+        """Process Surebet response data."""
+        if isinstance(response_data, str):
+            return parse_surebet_html(response_data, profile or "valuebets")
+        return []
+
+
+def parse_surebet_html(html: str, profile: str = "valuebets") -> List[Dict[str, Any]]:
+    """Parse Surebet HTML and return normalized alerts."""
+    try:
+        raw_items = parse_valuebets_html(html)
+        return [_norm_item(item, profile) for item in raw_items]
+    except Exception as e:
+        logger.error("Failed to parse Surebet HTML", error=str(e))
+        return []
 
 
 def _norm_item(item: Dict[str, Any], profile: str) -> Dict[str, Any]:

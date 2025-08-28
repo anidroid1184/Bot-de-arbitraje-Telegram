@@ -30,7 +30,7 @@ from typing import Optional, Set
 
 import requests
 
-from .logger import get_module_logger
+import structlog
 from .telegram_notifier import TelegramNotifier
 from ..pipeline.html_pipeline import PipelineRunner
 from ..snapshots.snapshot_manager import latest_per_tab
@@ -38,7 +38,7 @@ from ..parsers import betburger_html as bbp
 from ..parsers import surebet_html as sbp
 from .hints_store import add_label as hints_add_label
 
-logger = get_module_logger("command_controller")
+logger = structlog.get_logger("command_controller")
 
 
 class PauseController:

@@ -47,6 +47,16 @@ def _iso_now() -> str:
     return dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
+class BetburgerParser:
+    """Parser for Betburger responses."""
+    
+    def process_response(self, response_data: Dict[str, Any], profile: str = None) -> List[Dict[str, Any]]:
+        """Process Betburger response data."""
+        if isinstance(response_data, str):
+            return parse_betburger_html(response_data, profile or "profile_1")
+        return []
+
+
 def parse_betburger_html(html: str, profile: str = "profile_1") -> List[Dict[str, Any]]:
     """Parse a Betburger HTML snapshot and return a list of alert dicts.
 

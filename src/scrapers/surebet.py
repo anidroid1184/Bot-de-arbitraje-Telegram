@@ -20,13 +20,8 @@ from bs4 import BeautifulSoup
 import re
 
 # Optional: use structlog if available in the project
-try:
-    from ..utils.logger import get_module_logger  # type: ignore
-    logger = get_module_logger("surebet_scraper")
-except Exception:  # pragma: no cover - fallback basic logger
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("surebet_scraper")
+import structlog
+logger = structlog.get_logger("surebet_scraper")
 
 
 @dataclass

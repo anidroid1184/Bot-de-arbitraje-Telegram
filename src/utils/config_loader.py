@@ -14,9 +14,9 @@ import os
 import json
 from typing import Any, Dict, Optional
 
-from .logger import get_module_logger
+import structlog
 
-logger = get_module_logger("config_loader")
+logger = structlog.get_logger("config_loader")
 
 _DEFAULT_CANDIDATES = [
     os.getenv("CONFIG_YAML", "").strip(),

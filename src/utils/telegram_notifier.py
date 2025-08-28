@@ -17,9 +17,9 @@ from dataclasses import dataclass
 
 import requests
 
-from .logger import get_module_logger
+import structlog
 
-logger = get_module_logger("telegram_notifier")
+logger = structlog.get_logger("telegram_notifier")
 
 
 @dataclass

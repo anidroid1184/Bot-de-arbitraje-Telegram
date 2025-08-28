@@ -21,9 +21,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from ..utils.logger import get_module_logger
+import structlog
 
-logger = get_module_logger("snapshot_manager")
+logger = structlog.get_logger("snapshot_manager")
 
 ISO_FMT = "%Y%m%dT%H%M%S"
 FILENAME_RE = re.compile(r"^(?P<platform>[a-zA-Z0-9_-]+)-(?P<tab>\d+)-(?P<ts>\d{8}T\d{6})\.(?P<ext>html|meta\.json)$")
