@@ -54,7 +54,18 @@ class PlaywrightManager:
             self.context = self.browser.new_context(proxy=proxy, user_agent=self._user_agent())
             self._apply_performance_tweaks(self.context)
         else:  # chromium default
-            self.browser = self._pl.chromium.launch(headless=headless)
+            # Hardened launch for server environments
+            try:
+                self.browser = self._pl.chromium.launch(
+                    headless=headless,
+                    args=["--no-sandbox", "--disable-dev-shm-usage"]
+                )
+            except Exception as e:
+                logger.error("Chromium launch failed", error=str(e))
+                raise
+            if not self.browser:
+                logger.error("Chromium returned None on launch")
+                raise RuntimeError("Chromium failed to launch")
             self.context = self.browser.new_context(proxy=proxy, user_agent=self._user_agent())
             self._apply_performance_tweaks(self.context)
 
