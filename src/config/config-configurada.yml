@@ -61,7 +61,7 @@ betburger_profiles:
       - bookmakers: ["winamax", "bet365"]
     required_fields: ["timestamp_utc", "match", "selection_a.bookmaker", "selection_a.odd", "selection_b.bookmaker", "selection_b.odd", "roi_pct"]
 
-    filtro_6:
+  filtro_6:
     channel_id: "-1003073937037"
     description: "Betburger Tabs - Filtro 6"
     platform: betburger

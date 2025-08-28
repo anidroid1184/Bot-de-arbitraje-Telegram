@@ -22,30 +22,38 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import datetime as dt
 
-from scrapers.surebet import parse_valuebets_html
+import structlog
+
+# Use absolute import to avoid relative import issues when running from project root
+from src.scrapers.surebet import parse_valuebets_html
+from src.processors.arbitrage_data import ArbitrageData
 
 
 def _now_iso_utc() -> str:
     return dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
+logger = structlog.get_logger(__name__)
+
+
 class SurebetParser:
     """Parser for Surebet responses."""
     
-    def process_response(self, response_data: Dict[str, Any], profile: str = None) -> List[Dict[str, Any]]:
+    def process_response(self, response_data: Dict[str, Any], profile: str = None) -> List[ArbitrageData]:
         """Process Surebet response data."""
         if isinstance(response_data, str):
             return parse_surebet_html(response_data, profile or "valuebets")
         return []
 
 
-def parse_surebet_html(html: str, profile: str = "valuebets") -> List[Dict[str, Any]]:
+def parse_surebet_html(html: str, profile: str = "valuebets") -> List[ArbitrageData]:
     """Parse Surebet HTML and return normalized alerts."""
     try:
         raw_items = parse_valuebets_html(html)
-        return [_norm_item(item, profile) for item in raw_items]
+        dict_alerts = [_norm_item(item, profile) for item in raw_items]
+        return [ArbitrageData.from_surebet_json(a, profile=profile) for a in dict_alerts]
     except Exception as e:
-        logger.error("Failed to parse Surebet HTML", error=str(e))
+        logger.error("surebet.parse_html_failed", error=str(e))
         return []
 
 
@@ -56,6 +64,26 @@ def _norm_item(item: Dict[str, Any], profile: str) -> Dict[str, Any]:
     }
     # For Valuebets we typically only have a single side
     selection_b = {}
+
+    # Optional enrichments if present in parsed item
+    event_start = item.get("event_start")  # ISO8601 or localized; parser should normalize if possible
+    minutes_to_start = None
+    try:
+        if event_start:
+            # Best effort: compute minutes to start if event_start is ISO and in future
+            dt_start = dt.datetime.fromisoformat(event_start.replace("Z", "+00:00")) if isinstance(event_start, str) else None
+            if dt_start:
+                now = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc)
+                delta = (dt_start - now).total_seconds() / 60.0
+                minutes_to_start = int(delta)
+    except Exception:
+        # Do not fail enrichment
+        minutes_to_start = None
+
+    bookmaker_links = {}
+    # If the item contains a direct link to bookmaker, attach it under selection_a key
+    if item.get("bookmaker_link"):
+        bookmaker_links[selection_a.get("bookmaker", "?")] = item.get("bookmaker_link")
 
     norm: Dict[str, Any] = {
         "source": "surebet",
@@ -69,6 +97,10 @@ def _norm_item(item: Dict[str, Any], profile: str) -> Dict[str, Any]:
         "selection_a": selection_a,
         "selection_b": selection_b,
         "target_link": item.get("link"),
+        # Optional enriched fields
+        "event_start": event_start,
+        "time_to_start_minutes": minutes_to_start,
+        "bookmaker_links": bookmaker_links or None,
     }
     return norm
 
@@ -80,13 +112,13 @@ essential_keys = [
 ]
 
 
-def parse_surebet_valuebets_html(html: str, profile: str = "valuebets") -> List[Dict[str, Any]]:
+def parse_surebet_valuebets_html(html: str, profile: str = "valuebets") -> List[ArbitrageData]:
     """Return a list of normalized alerts from a Surebet Valuebets snapshot."""
     raw_items = parse_valuebets_html(html, profile_name=profile) or []
-    alerts: List[Dict[str, Any]] = []
+    alerts: List[ArbitrageData] = []
     for it in raw_items:
         al = _norm_item(it, profile)
         # Minimal sanity filter: must have at least match or link/value
         if al.get("match") or al.get("value_pct") or al.get("target_link"):
-            alerts.append(al)
+            alerts.append(ArbitrageData.from_surebet_json(al, profile=profile))
     return alerts
