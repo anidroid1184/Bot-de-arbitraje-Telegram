@@ -18,18 +18,37 @@ import time
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+src_path = str(Path(__file__).parent.parent / "src")
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
+print(f"DEBUG: Added to sys.path: {src_path}")
+print(f"DEBUG: Current working directory: {os.getcwd()}")
+print(f"DEBUG: sys.path: {sys.path[:3]}...")
 
 from dotenv import load_dotenv
+
+# Import modules one by one to identify specific failures
+try:
+    from pipeline.realtime_processor import RealtimeProcessor
+    print("✅ Successfully imported RealtimeProcessor")
+except ImportError as e:
+    print(f"❌ Failed to import RealtimeProcessor: {e}")
+    RealtimeProcessor = None
+
 try:
     from browser.playwright_manager import PlaywrightManager
-    from network.playwright_capture import PlaywrightCapture
-    from pipeline.realtime_processor import RealtimeProcessor
-except ImportError:
-    # Fallback: create minimal test without browser dependencies
+    print("✅ Successfully imported PlaywrightManager")
+except ImportError as e:
+    print(f"❌ Failed to import PlaywrightManager: {e}")
     PlaywrightManager = None
+
+try:
+    from network.playwright_capture import PlaywrightCapture
+    print("✅ Successfully imported PlaywrightCapture")
+except ImportError as e:
+    print(f"❌ Failed to import PlaywrightCapture: {e}")
     PlaywrightCapture = None
-    from pipeline.realtime_processor import RealtimeProcessor
 import structlog
 
 # Load environment
