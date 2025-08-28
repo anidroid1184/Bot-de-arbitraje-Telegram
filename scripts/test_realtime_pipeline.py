@@ -114,6 +114,13 @@ class RealtimePipelineTest:
             # Some server versions require a positional bot_token
             token = os.getenv("TELEGRAM_BOT_TOKEN")
             ts = TelegramSender(token) if TelegramSender else None
+            # 3.a) Server variant that expects ONLY telegram_sender positional
+            if ts is not None:
+                try:
+                    return RealtimeProcessor(ts)
+                except TypeError as e:
+                    print(f"ℹ️ RealtimeProcessor(ts) failed: {e}")
+            # 3.b) Variant expecting (channel_mapper, telegram_sender)
             if cm is not None and ts is not None:
                 return RealtimeProcessor(cm, ts)
         except TypeError as e:
@@ -126,6 +133,13 @@ class RealtimePipelineTest:
             cm = ChannelMapper(None) if ChannelMapper else None
             token = os.getenv("TELEGRAM_BOT_TOKEN")
             ts = TelegramSender(token) if TelegramSender else None
+            # 4.a) Keyword with only telegram_sender
+            if ts is not None:
+                try:
+                    return RealtimeProcessor(telegram_sender=ts)
+                except TypeError as e:
+                    print(f"ℹ️ RealtimeProcessor(telegram_sender=ts) failed: {e}")
+            # 4.b) Keyword with both
             if cm is not None and ts is not None:
                 return RealtimeProcessor(channel_mapper=cm, telegram_sender=ts)
         except TypeError as e:
