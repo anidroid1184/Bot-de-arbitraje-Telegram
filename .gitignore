@@ -56,3 +56,4 @@ config/channels.local.yaml
 respaldo/
 config.yml
 proxies.txt
+.env
