@@ -40,6 +40,17 @@ def test_individual_modules():
         ("network.playwright_capture", "network/playwright_capture.py"),
     ]
     
+    # Check if directories exist
+    src_path = Path(__file__).parent.parent / "src"
+    print(f"📂 Checking directories in {src_path}:")
+    for module_name, file_path in modules_to_test:
+        if "." in module_name and not module_name.startswith(("structlog", "aiohttp", "playwright")):
+            dir_name = module_name.split(".")[0]
+            dir_path = src_path / dir_name
+            exists = dir_path.exists()
+            print(f"   {dir_name}/: {'✅' if exists else '❌'}")
+    print()
+    
     results = {}
     
     for module_name, file_path in modules_to_test:
