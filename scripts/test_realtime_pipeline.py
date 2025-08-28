@@ -16,6 +16,7 @@ import os
 import sys
 import time
 from pathlib import Path
+import inspect
 
 # Add src to path
 src_path = str(Path(__file__).parent.parent / "src")
@@ -187,15 +188,30 @@ class RealtimePipelineTest:
 
             results = {}
             for channel_name, channel_id in all_channels:
-                try:
-                    ok = await sender.send_test_message_async(
-                        channel_id,
-                        f"🧪 **Test de conectividad**\n\nCanal: {channel_name}\nID: {channel_id}\n⏱️ {time.strftime('%H:%M:%S')}"
-                    )
-                    results[channel_name] = ok
-                except Exception as e:
-                    logger.error("Channel test failed", channel=channel_name, error=str(e))
-                    results[channel_name] = False
+                message = f"🧪 **Test de conectividad**\n\nCanal: {channel_name}\nID: {channel_id}\n⏱️ {time.strftime('%H:%M:%S')}"
+                ok = False
+                # Try async method if present and coroutine
+                if hasattr(sender, "send_test_message_async"):
+                    try:
+                        method = getattr(sender, "send_test_message_async")
+                        if inspect.iscoroutinefunction(method):
+                            ok = await method(channel_id, message)
+                        else:
+                            # In rare cases it's a normal func; run in thread
+                            ok = await asyncio.to_thread(method, channel_id, message)
+                    except AttributeError:
+                        ok = False
+                    except Exception as e:
+                        logger.error("Channel test failed", channel=channel_name, error=str(e))
+                        ok = False
+                # Fallback to sync method
+                if not ok and hasattr(sender, "send_test_message"):
+                    try:
+                        ok = await asyncio.to_thread(sender.send_test_message, channel_id, message)
+                    except Exception as e:
+                        logger.error("Channel test failed", channel=channel_name, error=str(e))
+                        ok = False
+                results[channel_name] = ok
         
         print("\n📊 Channel Test Results:")
         success_count = 0
@@ -208,8 +224,8 @@ class RealtimePipelineTest:
         print(f"\n📈 Summary: {success_count}/{len(results)} channels OK")
         return success_count == len(results)
     
-    def setup_playwright(self):
-        """Setup Playwright manager and capture."""
+    async def setup_playwright(self):
+        """Setup Playwright manager and capture in a background thread if needed."""
         try:
             # Create config object similar to smoke test
             class Config:
@@ -217,23 +233,24 @@ class RealtimePipelineTest:
                     self.bot = self
                     self.headless = os.getenv("BOT_HEADLESS", "false").lower() == "true"
                     self.browser = os.getenv("BROWSER", "firefox")
-            
+
             config = Config()
-            
-            # Initialize Playwright manager
-            self.playwright_manager = PlaywrightManager(config)
-            self.playwright_manager.launch(engine=config.browser)
-            
-            # Setup capture with request processing
-            self.capture = PlaywrightCapture(
-                self.playwright_manager,
-                patterns=["/api/", "/valuebets", "/surebets", "/arbs", "/users/"],
-                process_response_callback=self.process_intercepted_request
-            )
-            
+
+            def _setup_sync():
+                pm = PlaywrightManager(config)
+                pm.launch(engine=config.browser)
+                cap = PlaywrightCapture(
+                    pm,
+                    patterns=["/api/", "/valuebets", "/surebets", "/arbs", "/users/"],
+                    process_response_callback=self.process_intercepted_request
+                )
+                return pm, cap
+
+            self.playwright_manager, self.capture = await asyncio.to_thread(_setup_sync)
+
             logger.info("Playwright setup completed")
             return True
-            
+
         except Exception as e:
             logger.error("Failed to setup Playwright", error=str(e))
             return False
@@ -261,7 +278,7 @@ class RealtimePipelineTest:
         """Run Surebet interception test."""
         print("🎯 Starting Surebet pipeline test...")
         
-        if not self.setup_playwright():
+        if not await self.setup_playwright():
             return False
         
         try:
@@ -280,7 +297,12 @@ class RealtimePipelineTest:
             print("📊 Press Ctrl+C to stop and see stats")
             
             # Start capture
-            await self.capture.start_capture()
+            # Handle sync/async start_capture
+            if hasattr(self.capture, "start_capture"):
+                if inspect.iscoroutinefunction(self.capture.start_capture):
+                    await self.capture.start_capture()
+                else:
+                    await asyncio.to_thread(self.capture.start_capture)
             
             # Keep running and show periodic stats
             start_time = time.time()
@@ -288,7 +310,12 @@ class RealtimePipelineTest:
                 await asyncio.sleep(10)
                 
                 elapsed = time.time() - start_time
-                stats = self.processor.get_stats()
+                stats = {"success_rate": 0, "error_count": 0}
+                if hasattr(self.processor, "get_stats"):
+                    try:
+                        stats = self.processor.get_stats()
+                    except Exception:
+                        pass
                 
                 print(f"\n📈 Stats after {elapsed:.0f}s:")
                 print(f"  Requests processed: {self.processed_requests}")
@@ -300,10 +327,16 @@ class RealtimePipelineTest:
             print("\n⏹️ Stopping test...")
             
         finally:
-            if self.capture:
-                await self.capture.stop_capture()
-            if self.playwright_manager:
-                await self.playwright_manager.close()
+            if self.capture and hasattr(self.capture, "stop_capture"):
+                if inspect.iscoroutinefunction(self.capture.stop_capture):
+                    await self.capture.stop_capture()
+                else:
+                    await asyncio.to_thread(self.capture.stop_capture)
+            if self.playwright_manager and hasattr(self.playwright_manager, "close"):
+                if inspect.iscoroutinefunction(self.playwright_manager.close):
+                    await self.playwright_manager.close()
+                else:
+                    await asyncio.to_thread(self.playwright_manager.close)
         
         return True
     
@@ -311,7 +344,7 @@ class RealtimePipelineTest:
         """Run Betburger interception test."""
         print("🎯 Starting Betburger pipeline test...")
         
-        if not self.setup_playwright():
+        if not await self.setup_playwright():
             return False
         
         try:
@@ -330,7 +363,11 @@ class RealtimePipelineTest:
             print("📊 Press Ctrl+C to stop and see stats")
             
             # Start capture
-            await self.capture.start_capture()
+            if hasattr(self.capture, "start_capture"):
+                if inspect.iscoroutinefunction(self.capture.start_capture):
+                    await self.capture.start_capture()
+                else:
+                    await asyncio.to_thread(self.capture.start_capture)
             
             # Keep running and show periodic stats
             start_time = time.time()
@@ -338,7 +375,12 @@ class RealtimePipelineTest:
                 await asyncio.sleep(10)
                 
                 elapsed = time.time() - start_time
-                stats = self.processor.get_stats()
+                stats = {"success_rate": 0, "error_count": 0}
+                if hasattr(self.processor, "get_stats"):
+                    try:
+                        stats = self.processor.get_stats()
+                    except Exception:
+                        pass
                 
                 print(f"\n📈 Stats after {elapsed:.0f}s:")
                 print(f"  Requests processed: {self.processed_requests}")
@@ -350,10 +392,16 @@ class RealtimePipelineTest:
             print("\n⏹️ Stopping test...")
             
         finally:
-            if self.capture:
-                await self.capture.stop_capture()
-            if self.playwright_manager:
-                await self.playwright_manager.close()
+            if self.capture and hasattr(self.capture, "stop_capture"):
+                if inspect.iscoroutinefunction(self.capture.stop_capture):
+                    await self.capture.stop_capture()
+                else:
+                    await asyncio.to_thread(self.capture.stop_capture)
+            if self.playwright_manager and hasattr(self.playwright_manager, "close"):
+                if inspect.iscoroutinefunction(self.playwright_manager.close):
+                    await self.playwright_manager.close()
+                else:
+                    await asyncio.to_thread(self.playwright_manager.close)
         
         return True
 
@@ -389,7 +437,12 @@ async def main():
         success = await test.run_betburger_test()
     
     # Final stats
-    stats = test.processor.get_stats()
+    stats = {"success_rate": 0, "error_count": 0}
+    if test.processor and hasattr(test.processor, "get_stats"):
+        try:
+            stats = test.processor.get_stats()
+        except Exception:
+            pass
     print(f"\n📊 Final Stats:")
     print(f"  Total requests: {test.processed_requests}")
     print(f"  Total alerts sent: {test.sent_alerts}")
