@@ -15,6 +15,8 @@ import asyncio
 import os
 import sys
 import time
+import json
+import re
 from pathlib import Path
 import inspect
 
@@ -245,18 +247,28 @@ class RealtimePipelineTest:
             class Config:
                 def __init__(self):
                     self.bot = self
-                    self.headless = os.getenv("BOT_HEADLESS", "false").lower() == "true"
+                    # Respect explicit headless setting; default to false for local debug
+                    self.headless = os.getenv("BOT_HEADLESS", "false").lower() in ("1", "true", "yes", "on")
                     # Prefer chromium by default in servers
-                    self.browser = os.getenv("BROWSER", "chromium")
+                    self.browser = os.getenv("BROWSER", os.getenv("PLAYWRIGHT_ENGINE", "chromium"))
 
             config = Config()
-            # If no DISPLAY (common on servers), force headless and prefer chromium
-            if not os.environ.get("DISPLAY"):
+            # If no DISPLAY (common on Linux servers), prefer headless unless user explicitly asked for headed
+            # Windows/Mac don't use DISPLAY the same way, so don't override there.
+            is_linux = sys.platform.startswith("linux")
+            display_missing = not os.environ.get("DISPLAY")
+            user_explicit_headed = os.getenv("BOT_HEADLESS", "").strip() != "" and os.getenv("BOT_HEADLESS").lower() in ("0", "false", "no", "off")
+            if is_linux and display_missing and not config.headless and user_explicit_headed:
+                # Warn but allow headed so the user can run under Xvfb or X11 forwarding
+                print("⚠️ DISPLAY not set on Linux but BOT_HEADLESS explicitly false. Attempting headed mode. Make sure to run under X11 forwarding or xvfb-run.")
+            elif is_linux and display_missing:
+                # Safe default: headless on Linux servers when DISPLAY is absent and user didn't force headed
                 if not config.headless:
                     os.environ["BOT_HEADLESS"] = "true"
                     config.headless = True
-                if config.browser not in ("chromium", "webkit", "firefox"):
-                    config.browser = "chromium"
+            # Normalize engine
+            if config.browser not in ("chromium", "webkit", "firefox"):
+                config.browser = "chromium"
             print(f"DEBUG: Resolved browser engine: {config.browser}")
             print(f"DEBUG: Resolved headless: {config.headless}")
             print(f"DEBUG: Resolved browser engine: {config.browser}")
@@ -350,99 +362,78 @@ class RealtimePipelineTest:
         except Exception as e:
             logger.error("Failed to setup Playwright", error=str(e))
             return False
-    
-    def process_intercepted_request(self, url: str, response_data: dict, **kwargs):
-        """Process intercepted request through pipeline."""
-        try:
-            profile = kwargs.get('profile', 'unknown')
             
-            logger.info("Processing intercepted request", url=url, profile=profile)
-            
-            # Use RealtimeProcessor to process and send
-            sent_count = self.processor.process_and_send(url, response_data, profile)
-            
-            self.processed_requests += 1
-            self.sent_alerts += sent_count
-            
-            if sent_count > 0:
-                print(f"📤 Sent {sent_count} alerts from {url}")
-            
-        except Exception as e:
-            logger.error("Failed to process intercepted request", url=url, error=str(e))
-    
-    async def run_surebet_test(self):
-        """Run Surebet interception test."""
-        print("🎯 Starting Surebet pipeline test...")
-        
-        if not await self.setup_playwright():
-            return False
-        
-        try:
-            # Open Surebet page using the manager's context
-            ctx = self.playwright_manager.context
-            if ctx is None:
-                logger.error("Browser context not available")
-                return False
-            url = "https://es.surebet.com/valuebets"
-            # Open one or multiple tabs
-            pages = []
-            if PlaywrightManager is not None and hasattr(self.playwright_manager, "open_tabs"):
-                pages = await asyncio.to_thread(self.playwright_manager.open_tabs, url, max(1, int(self.tabs_sb)))
-            else:
-                # Fallback: open N pages manually
-                for _ in range(max(1, int(self.tabs_sb))):
-                    p = await asyncio.to_thread(ctx.new_page)
-                    await asyncio.to_thread(p.goto, url, timeout=8000, wait_until="domcontentloaded")
-                    pages.append(p)
-            if pages:
-                print(f"✅ Opened {len(pages)} Surebet tab(s). First URL: {pages[0].url}")
-            else:
-                print("⚠️ No Surebet tabs opened (unexpected)")
-            print("🔄 Intercepting requests... (navigate manually to see alerts)")
-            print("📊 Press Ctrl+C to stop and see stats")
-            
-            # Start capture (PlaywrightCapture.start)
-            await asyncio.to_thread(self.capture.start)
-            
-            # Keep running and show periodic stats
-            start_time = time.time()
-            while True:
-                await asyncio.sleep(10)
-                
-                elapsed = time.time() - start_time
-                stats = {"success_rate": 0, "error_count": 0}
-                if hasattr(self.processor, "get_stats"):
-                    try:
-                        stats = self.processor.get_stats()
-                    except Exception:
-                        pass
-                
-                print(f"\n📈 Stats after {elapsed:.0f}s:")
-                print(f"  Requests processed: {self.processed_requests}")
-                print(f"  Alerts sent: {self.sent_alerts}")
-                print(f"  Success rate: {stats['success_rate']}%")
-                print(f"  Errors: {stats['error_count']}")
-                
-        except KeyboardInterrupt:
-            print("\n⏹️ Stopping test...")
-            
-        finally:
-            # Stop capture (flush/close persistence file if configured)
-            if self.capture and hasattr(self.capture, "stop"):
-                try:
-                    if inspect.iscoroutinefunction(self.capture.stop):
-                        await self.capture.stop()
-                    else:
-                        await asyncio.to_thread(self.capture.stop)
-                except Exception:
-                    pass
-            if self.playwright_manager and hasattr(self.playwright_manager, "close"):
-                if inspect.iscoroutinefunction(self.playwright_manager.close):
-                    await self.playwright_manager.close()
-                else:
-                    await asyncio.to_thread(self.playwright_manager.close)
-        
         return True
+
+    def process_intercepted_request(self, url: str, response_data: dict, **kwargs):
+        """Process one intercepted record via RealtimeProcessor and track counters."""
+        try:
+            self.processed_requests += 1
+            profile = kwargs.get("profile", "unknown")
+            if not self.processor:
+                return 0
+            # Unified entrypoint in processor
+            if hasattr(self.processor, "process_and_send"):
+                sent = self.processor.process_and_send(url, response_data, profile)
+            else:
+                # Backward compatibility: try generic process
+                sent = 0
+                if hasattr(self.processor, "process"):
+                    try:
+                        alert = self.processor.process(url, response_data, profile)
+                        if alert and hasattr(self.processor, "send"):
+                            self.processor.send(alert)
+                            sent = 1
+                    except Exception:
+                        sent = 0
+            if sent:
+                self.sent_alerts += int(sent)
+            return sent
+        except Exception as e:
+            logger.error("process_intercepted_failed", url=url, error=str(e))
+            return 0
+
+    async def _consume_capture_loop(self, source: str) -> None:
+        """Continuously flush PlaywrightCapture buffer and forward to processor.
+
+        Polls every CAPTURE_POLL_INTERVAL (default 0.3s). Filters Betburger to pro_search.
+        """
+        if not self.capture:
+            return
+        poll_interval = float(os.getenv("CAPTURE_POLL_INTERVAL", "0.3"))
+        pro_search = re.compile(r"/api/(?:v\\d+/)?pro_search", re.IGNORECASE)
+        try:
+            while True:
+                await asyncio.sleep(poll_interval)
+                try:
+                    batch = await asyncio.to_thread(self.capture.flush)
+                except Exception:
+                    batch = []
+                if not batch:
+                    continue
+                for rec in batch:
+                    try:
+                        if not isinstance(rec, dict):
+                            continue
+                        url = rec.get("url") or ""
+                        rtype = rec.get("type")
+                        if not url or rtype != "response":
+                            continue
+                        if source == "betburger" and not pro_search.search(url):
+                            continue
+                        payload = rec.get("json") or rec.get("text")
+                        if not payload:
+                            continue
+                        if isinstance(payload, str):
+                            try:
+                                payload = json.loads(payload)
+                            except Exception:
+                                continue
+                        self.process_intercepted_request(url, payload, profile="unknown")
+                    except Exception as e:
+                        logger.warning("capture_consume_error", error=str(e))
+        except asyncio.CancelledError:
+            return
     
     async def run_betburger_test(self):
         """Run Betburger interception test."""
@@ -473,8 +464,9 @@ class RealtimePipelineTest:
             print("🔄 Intercepting requests... (navigate manually to see alerts)")
             print("📊 Press Ctrl+C to stop and see stats")
             
-            # Start capture
+            # Start capture and consumer loop
             await asyncio.to_thread(self.capture.start)
+            consumer = asyncio.create_task(self._consume_capture_loop("betburger"))
             
             # Keep running and show periodic stats
             start_time = time.time()
@@ -507,6 +499,11 @@ class RealtimePipelineTest:
                         await asyncio.to_thread(self.capture.stop)
                 except Exception:
                     pass
+            try:
+                if 'consumer' in locals():
+                    consumer.cancel()
+            except Exception:
+                pass
             if self.playwright_manager and hasattr(self.playwright_manager, "close"):
                 if inspect.iscoroutinefunction(self.playwright_manager.close):
                     await self.playwright_manager.close()
