@@ -111,7 +111,9 @@ class RealtimePipelineTest:
         # 3) Try dependency-injected positional args
         try:
             cm = ChannelMapper(None) if ChannelMapper else None
-            ts = TelegramSender() if TelegramSender else None
+            # Some server versions require a positional bot_token
+            token = os.getenv("TELEGRAM_BOT_TOKEN")
+            ts = TelegramSender(token) if TelegramSender else None
             if cm is not None and ts is not None:
                 return RealtimeProcessor(cm, ts)
         except TypeError as e:
@@ -122,7 +124,8 @@ class RealtimePipelineTest:
         # 4) Try dependency-injected keyword args
         try:
             cm = ChannelMapper(None) if ChannelMapper else None
-            ts = TelegramSender() if TelegramSender else None
+            token = os.getenv("TELEGRAM_BOT_TOKEN")
+            ts = TelegramSender(token) if TelegramSender else None
             if cm is not None and ts is not None:
                 return RealtimeProcessor(channel_mapper=cm, telegram_sender=ts)
         except TypeError as e:
