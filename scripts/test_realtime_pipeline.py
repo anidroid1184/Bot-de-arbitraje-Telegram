@@ -67,7 +67,7 @@ class RealtimePipelineTest:
             print("❌ RealtimeProcessor no disponible - creando mock")
             self.processor = None
         else:
-            self.processor = RealtimeProcessor()
+            self.processor = RealtimeProcessor(config_path=None)
         
         self.playwright_manager = None
         self.capture = None
