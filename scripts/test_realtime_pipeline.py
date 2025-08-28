@@ -238,12 +238,12 @@ class RealtimePipelineTest:
 
             def _setup_sync():
                 pm = PlaywrightManager(config)
+                # Launch browser and obtain a BrowserContext
                 pm.launch(engine=config.browser)
-                cap = PlaywrightCapture(
-                    pm,
-                    patterns=["/api/", "/valuebets", "/surebets", "/arbs", "/users/"],
-                    process_response_callback=self.process_intercepted_request
-                )
+                if pm.context is None:
+                    raise RuntimeError("Playwright context not initialized after launch")
+                # PlaywrightCapture expects a BrowserContext or Page
+                cap = PlaywrightCapture(pm.context)
                 return pm, cap
 
             self.playwright_manager, self.capture = await asyncio.to_thread(_setup_sync)
@@ -282,27 +282,19 @@ class RealtimePipelineTest:
             return False
         
         try:
-            # Open Surebet tab
-            tab_info = await self.capture.open_tab(
-                url="https://es.surebet.com/valuebets",
-                profile="ev-surebets"
-            )
-            
-            if not tab_info:
-                logger.error("Failed to open Surebet tab")
+            # Open Surebet page using the manager's context
+            ctx = self.playwright_manager.context
+            if ctx is None:
+                logger.error("Browser context not available")
                 return False
-            
-            print(f"✅ Opened Surebet tab: {tab_info['url']}")
+            page = await asyncio.to_thread(ctx.new_page)
+            await asyncio.to_thread(page.goto, "https://es.surebet.com/valuebets", None, "domcontentloaded", 8000)
+            print(f"✅ Opened Surebet tab: {page.url}")
             print("🔄 Intercepting requests... (navigate manually to see alerts)")
             print("📊 Press Ctrl+C to stop and see stats")
             
-            # Start capture
-            # Handle sync/async start_capture
-            if hasattr(self.capture, "start_capture"):
-                if inspect.iscoroutinefunction(self.capture.start_capture):
-                    await self.capture.start_capture()
-                else:
-                    await asyncio.to_thread(self.capture.start_capture)
+            # Start capture (PlaywrightCapture.start)
+            await asyncio.to_thread(self.capture.start)
             
             # Keep running and show periodic stats
             start_time = time.time()
@@ -327,11 +319,7 @@ class RealtimePipelineTest:
             print("\n⏹️ Stopping test...")
             
         finally:
-            if self.capture and hasattr(self.capture, "stop_capture"):
-                if inspect.iscoroutinefunction(self.capture.stop_capture):
-                    await self.capture.stop_capture()
-                else:
-                    await asyncio.to_thread(self.capture.stop_capture)
+            # No explicit stop method required for PlaywrightCapture; just close the browser
             if self.playwright_manager and hasattr(self.playwright_manager, "close"):
                 if inspect.iscoroutinefunction(self.playwright_manager.close):
                     await self.playwright_manager.close()
@@ -348,26 +336,19 @@ class RealtimePipelineTest:
             return False
         
         try:
-            # Open Betburger tab
-            tab_info = await self.capture.open_tab(
-                url="https://betburger.com/es/arbs",
-                profile="bet365_valuebets"
-            )
-            
-            if not tab_info:
-                logger.error("Failed to open Betburger tab")
+            # Open Betburger page
+            ctx = self.playwright_manager.context
+            if ctx is None:
+                logger.error("Browser context not available")
                 return False
-            
-            print(f"✅ Opened Betburger tab: {tab_info['url']}")
+            page = await asyncio.to_thread(ctx.new_page)
+            await asyncio.to_thread(page.goto, "https://betburger.com/es/arbs", None, "domcontentloaded", 8000)
+            print(f"✅ Opened Betburger tab: {page.url}")
             print("🔄 Intercepting requests... (navigate manually to see alerts)")
             print("📊 Press Ctrl+C to stop and see stats")
             
             # Start capture
-            if hasattr(self.capture, "start_capture"):
-                if inspect.iscoroutinefunction(self.capture.start_capture):
-                    await self.capture.start_capture()
-                else:
-                    await asyncio.to_thread(self.capture.start_capture)
+            await asyncio.to_thread(self.capture.start)
             
             # Keep running and show periodic stats
             start_time = time.time()
