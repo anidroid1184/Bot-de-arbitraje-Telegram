@@ -51,6 +51,21 @@ except ImportError as e:
     PlaywrightCapture = None
 import structlog
 
+# Optional: components for dependency-injected constructor variants
+try:
+    from config.channel_mapper import ChannelMapper
+    print("✅ Successfully imported ChannelMapper")
+except ImportError as e:
+    print(f"❌ Failed to import ChannelMapper: {e}")
+    ChannelMapper = None
+
+try:
+    from notifications.telegram_sender import TelegramSender
+    print("✅ Successfully imported TelegramSender")
+except ImportError as e:
+    print(f"❌ Failed to import TelegramSender: {e}")
+    TelegramSender = None
+
 # Load environment
 ENV_PATH = Path(__file__).parent.parent / ".env"
 load_dotenv(ENV_PATH, override=True)
@@ -67,12 +82,55 @@ class RealtimePipelineTest:
             print("❌ RealtimeProcessor no disponible - creando mock")
             self.processor = None
         else:
-            self.processor = RealtimeProcessor()
+            # Create processor with backward-compatible constructor handling
+            self.processor = self._create_processor_compat()
         
         self.playwright_manager = None
         self.capture = None
         self.processed_requests = 0
         self.sent_alerts = 0
+
+    def _create_processor_compat(self):
+        """Try multiple constructor signatures for RealtimeProcessor for cross-version compatibility."""
+        # 1) Try no-args
+        try:
+            return RealtimeProcessor()
+        except TypeError as e:
+            print(f"ℹ️ RealtimeProcessor() failed: {e}")
+        except Exception as e:
+            print(f"ℹ️ RealtimeProcessor() unexpected error: {e}")
+
+        # 2) Try config_path kw
+        try:
+            return RealtimeProcessor(config_path=None)
+        except TypeError as e:
+            print(f"ℹ️ RealtimeProcessor(config_path=None) failed: {e}")
+        except Exception as e:
+            print(f"ℹ️ RealtimeProcessor(config_path=None) unexpected error: {e}")
+
+        # 3) Try dependency-injected positional args
+        try:
+            cm = ChannelMapper(None) if ChannelMapper else None
+            ts = TelegramSender() if TelegramSender else None
+            if cm is not None and ts is not None:
+                return RealtimeProcessor(cm, ts)
+        except TypeError as e:
+            print(f"ℹ️ RealtimeProcessor(cm, ts) failed: {e}")
+        except Exception as e:
+            print(f"ℹ️ RealtimeProcessor(cm, ts) unexpected error: {e}")
+
+        # 4) Try dependency-injected keyword args
+        try:
+            cm = ChannelMapper(None) if ChannelMapper else None
+            ts = TelegramSender() if TelegramSender else None
+            if cm is not None and ts is not None:
+                return RealtimeProcessor(channel_mapper=cm, telegram_sender=ts)
+        except TypeError as e:
+            print(f"ℹ️ RealtimeProcessor(channel_mapper=cm, telegram_sender=ts) failed: {e}")
+        except Exception as e:
+            print(f"ℹ️ RealtimeProcessor(channel_mapper=cm, telegram_sender=ts) unexpected error: {e}")
+
+        raise RuntimeError("Could not instantiate RealtimeProcessor with known signatures. Please ensure versions match.")
         
     async def test_channel_connectivity(self):
         """Test conectividad a todos los canales configurados."""
